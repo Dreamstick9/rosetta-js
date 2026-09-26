@@ -80,5 +80,12 @@
     "fanOutMinFiles": 4,
     "autoTournament": true,
     "tournamentSize": 2
+  },
+  "web": {
+    "enabled": true,
+    "maxFetchParts": 4,
+    "excludedDomains": [],
+    "jsonDigest": true,
+    "timeoutSeconds": 20
   }
 }

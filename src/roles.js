@@ -1,8 +1,8 @@
 import { CONFIG } from "./config.js";
 
 const AGENTS = CONFIG.agents;
-const READING_TOOLS = ["list_files", "read_file", "search", "bash"];
-const ALL_TOOLS = ["list_files", "read_file", "create_file", "write_file", "edit_file", "delete_file", "search", "bash", "skill"];
+const READING_TOOLS = ["list_files", "read_file", "search", "bash", "web_search", "web_fetch"];
+const ALL_TOOLS = ["list_files", "read_file", "create_file", "write_file", "edit_file", "delete_file", "search", "bash", "skill", "web_search", "web_fetch"];
 
 export const ROLES = {
   main: {

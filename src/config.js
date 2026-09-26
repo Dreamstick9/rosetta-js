@@ -17,13 +17,14 @@ const NUMBER_FIELDS = [
   "skills.maxInstructionTokens", "skills.maxCatalogSkills", "skills.maxDescriptionChars", "skills.maxSkillFiles",
   "intake.maxComments", "intake.maxBodyChars", "intake.maxCommentChars", "intake.cloneDepth",
   "intake.apiTimeoutSeconds", "intake.gitTimeoutSeconds",
+  "web.maxFetchParts", "web.timeoutSeconds",
 ];
 const AGENT_NUMBER_FIELDS = [
   "agents.maxParallelAgents", "agents.explorerMaxTurns", "agents.workerMaxTurns", "agents.reviewerMaxTurns",
   "agents.explorerMaxUsd", "agents.workerMaxUsd", "agents.reviewerMaxUsd",
   "agents.fanOutMinItems", "agents.fanOutMinFiles", "agents.tournamentSize",
 ];
-const BOOLEAN_FIELDS = ["exitAfterTask", "agents.reviewerEnabled", "agents.autoTournament"];
+const BOOLEAN_FIELDS = ["exitAfterTask", "agents.reviewerEnabled", "agents.autoTournament", "web.enabled", "web.jsonDigest"];
 
 export const HARNESS_ROOT = fileURLToPath(new URL("..", import.meta.url)).replace(/\/$/, "");
 export let PROJECT_ROOT = process.cwd();
@@ -66,6 +67,7 @@ function checkFields(config) {
   for (const field of BOOLEAN_FIELDS) {
     if (typeof readField(config, field) !== "boolean") failField(field, "true or false");
   }
+  if (!Array.isArray(config.web?.excludedDomains)) failField("web.excludedDomains", "a list of domain names");
 }
 
 function readField(config, field) {

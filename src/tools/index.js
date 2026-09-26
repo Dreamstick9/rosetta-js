@@ -2,14 +2,15 @@ import { FILE_TOOLS } from "./files.js";
 import { searchTool } from "./search.js";
 import { MAIN_SHELL, bashTool } from "./shell.js";
 import { skillTool } from "./skill.js";
+import { WEB_TOOLS } from "./web.js";
 import { PROJECT_ROOT } from "../config.js";
 import { todoTool } from "./todo.js";
 import { giveUpTool } from "./give_up.js";
 import { checkToolCall, describeBlock } from "../policy.js";
 import { describeToolRefusal } from "../roles.js";
 
-const TOOLS = [...FILE_TOOLS, searchTool, bashTool, skillTool, todoTool, giveUpTool];
-const READ_ONLY_TOOL_NAMES = new Set(["list_files", "read_file", "search", "skill"]);
+const TOOLS = [...FILE_TOOLS, searchTool, bashTool, skillTool, todoTool, giveUpTool, ...WEB_TOOLS];
+const READ_ONLY_TOOL_NAMES = new Set(["list_files", "read_file", "search", "skill", "web_search", "web_fetch"]);
 const SUMMARY_LENGTH = 60;
 const INTERRUPTED_RESULT = "Interrupted by the user.";
 
@@ -53,8 +54,9 @@ async function runToolCall(call, context) {
     checkArguments(tool.definition.function, call.args);
     const blockedReason = checkToolCall(call.name, call.args, context.shell.currentCwd(), context.root);
     if (blockedReason) return { call, output: describeBlock(blockedReason), status: "blocked", ms: 0 };
-    const output = await tool.run(call.args, context);
-    return { call, output, status: "ok", ms: Date.now() - startedAt };
+    const result = await tool.run(call.args, context);
+    const { output, line } = typeof result === "string" ? { output: result } : result;
+    return { call, output, line, status: "ok", ms: Date.now() - startedAt };
   } catch (error) {
     return { call, output: `Error: ${error.message}`, status: "error", ms: Date.now() - startedAt };
   }
@@ -78,7 +80,7 @@ function checkArguments(definition, args) {
 }
 
 export function summarizeToolArguments(args) {
-  const value = args?.path ?? args?.pattern ?? args?.command ?? args?.name ?? args?.action ?? args?.reason ?? "";
+  const value = args?.path ?? args?.pattern ?? args?.command ?? args?.name ?? args?.action ?? args?.reason ?? args?.url ?? args?.query ?? "";
   const text = String(value).replaceAll("\n", " ").trim();
   if (text.length <= SUMMARY_LENGTH) return text;
   return `${text.slice(0, SUMMARY_LENGTH)}…`;
