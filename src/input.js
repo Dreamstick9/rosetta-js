@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { LineEditor } from "./lineeditor.js";
 import { writeText } from "./ui.js";
 
@@ -27,7 +28,27 @@ export function stopTerminalInput() {
   process.stdin.pause();
 }
 
-export async function readPipedInput() {
+export async function readHeadlessTask(args) {
+  const prompt = readPromptArgument(args) ?? readIssueVariable();
+  if (prompt !== null) return prompt;
+  if (!process.stdin.isTTY) return readPipedInput();
+  return null;
+}
+
+function readIssueVariable() {
+  const issue = process.env.ISSUE;
+  if (!issue) return null;
+  if (fs.existsSync(issue) && fs.statSync(issue).isFile()) return fs.readFileSync(issue, "utf8");
+  return issue;
+}
+
+function readPromptArgument(args) {
+  const index = args.findIndex((arg) => arg === "-p" || arg === "--prompt");
+  if (index === -1) return null;
+  return args[index + 1] ?? "";
+}
+
+async function readPipedInput() {
   let text = "";
   process.stdin.setEncoding("utf8");
   for await (const chunk of process.stdin) text += chunk;

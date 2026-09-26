@@ -48,5 +48,13 @@
     "maxCatalogSkills": 40,
     "maxDescriptionChars": 150,
     "maxSkillFiles": 50
+  },
+  "intake": {
+    "maxComments": 20,
+    "maxBodyChars": 8000,
+    "maxCommentChars": 2000,
+    "cloneDepth": 1,
+    "apiTimeoutSeconds": 20,
+    "gitTimeoutSeconds": 180
   }
 }

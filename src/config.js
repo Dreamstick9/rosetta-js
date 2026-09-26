@@ -13,6 +13,8 @@ const NUMBER_FIELDS = [
   "retries.maxRetries", "retries.maxStallRetries", "retries.baseBackoffMs", "retries.maxRetryAfterMs",
   "tools.maxSearchMatches", "tools.maxSearchLineLength", "tools.listDepth", "tools.readLineLimit",
   "skills.maxInstructionTokens", "skills.maxCatalogSkills", "skills.maxDescriptionChars", "skills.maxSkillFiles",
+  "intake.maxComments", "intake.maxBodyChars", "intake.maxCommentChars", "intake.cloneDepth",
+  "intake.apiTimeoutSeconds", "intake.gitTimeoutSeconds",
 ];
 
 export const HARNESS_ROOT = fileURLToPath(new URL("..", import.meta.url)).replace(/\/$/, "");

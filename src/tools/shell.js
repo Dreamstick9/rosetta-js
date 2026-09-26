@@ -19,13 +19,14 @@ class ShellSession {
 
   start() {
     this.cwd ??= PROJECT_ROOT;
-    this.child = spawn("bash", ["--noprofile", "--norc"], { cwd: this.cwd, detached: true, env: buildChildEnvironment() });
-    this.child.stdout.setEncoding("utf8");
-    this.child.stderr.setEncoding("utf8");
-    this.child.stdout.on("data", (text) => this.receive(text));
-    this.child.stderr.on("data", (text) => this.receive(text));
-    this.child.on("exit", () => this.handleExit());
-    this.child.stdin.write(SHELL_SETUP);
+    const child = spawn("bash", ["--noprofile", "--norc"], { cwd: this.cwd, detached: true, env: buildChildEnvironment() });
+    this.child = child;
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (text) => this.receive(text));
+    child.stderr.on("data", (text) => this.receive(text));
+    child.on("exit", () => this.handleExit(child));
+    child.stdin.write(SHELL_SETUP);
   }
 
   async run(command, signal) {
@@ -64,7 +65,8 @@ class ShellSession {
     if (resolve) resolve(result);
   }
 
-  handleExit() {
+  handleExit(child) {
+    if (child !== this.child) return;
     this.child = null;
     if (!this.marker) return;
     const note = "[the shell exited; a fresh shell starts with the next command]";
@@ -129,6 +131,12 @@ export function getShellCwd() {
 
 export function stopShell() {
   session.signalGroup("SIGKILL");
+}
+
+export function resetShell() {
+  stopShell();
+  session.child = null;
+  session.cwd = null;
 }
 
 export const bashTool = {

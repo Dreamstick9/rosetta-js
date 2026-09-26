@@ -1,7 +1,7 @@
 ENV_FILE_FLAG := $(if $(wildcard .env),--env-file=$(CURDIR)/.env)
 NODE := PATH="$(CURDIR)/.tools/node/bin:$$PATH" node
 
-export REPO REPO_PATH TARGET_REPO ISSUE
+export REPO REPO_PATH TARGET_REPO WORK_DIR ISSUE
 
 .PHONY: setup run chat test clean
 
@@ -20,6 +20,7 @@ test: setup
 	@echo "syntax check OK"
 	@AI_API_KEY=unused $(NODE) test/policy.js
 	@AI_API_KEY=unused $(NODE) test/skills.js
+	@AI_API_KEY=unused $(NODE) test/intake.js
 	@$(NODE) $(ENV_FILE_FLAG) test/smoke.js
 
 clean:

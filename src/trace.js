@@ -35,6 +35,10 @@ export class Trace {
     this.write({ type: "prompt", instructionsFile, instructionsTruncated, skills, catalogSkills });
   }
 
+  recordIntake({ repo, issue, folder, checkout, ms }) {
+    this.write({ type: "intake", repo, issue, folder, checkout, ms });
+  }
+
   recordCompaction({ before, after }) {
     this.write({ type: "compaction", before, after });
   }

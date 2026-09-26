@@ -1,13 +1,14 @@
 #!/usr/bin/env node
-import fs from "node:fs";
 import { CONFIG } from "./config.js";
 import { Agent } from "./agent.js";
 import { Trace } from "./trace.js";
 import { countChangedFiles, takeProjectSnapshot } from "./checks.js";
 import { stopShell } from "./tools/shell.js";
-import { readPipedInput, readUserMessage, startTerminalInput, stopTerminalInput, watchForInterrupt } from "./input.js";
+import { readHeadlessTask, readUserMessage, startTerminalInput, stopTerminalInput, watchForInterrupt } from "./input.js";
 import { writeCostSummary, writeDimLine, writeError, writeFooter, writeLine } from "./ui.js";
 import { openWorkingFolder } from "./workdir.js";
+import { runIntake } from "./intake/index.js";
+import { parseTaskReference } from "./intake/parse.js";
 
 const HELP = `Commands:
   /help         show this help
@@ -20,6 +21,7 @@ const EXIT_CODES = { done: 0, max_turns: 3, budget: 3 };
 const SESSION_STARTED_AT = Date.now();
 
 let sessionSnapshot = null;
+let firstTaskStarted = false;
 let lastStatus = "no_task";
 
 async function main() {
@@ -27,32 +29,18 @@ async function main() {
   if (!config.apiKey) exitWithError("AI_API_KEY is not set. Export it in your environment first.");
   process.on("exit", cleanUp);
   writeDimLine(describeModel(config));
-  const problem = openWorkingFolder();
+  const args = process.argv.slice(2);
+  const task = await readHeadlessTask(args);
+  const problem = openWorkingFolder(task === null || parseTaskReference(task) !== null);
   if (problem) exitWithError(problem);
   const trace = new Trace(config);
-  const args = process.argv.slice(2);
-  const prompt = readPromptArgument(args) ?? readIssueVariable();
-  if (prompt !== null) return runHeadless(config, trace, prompt);
-  if (!process.stdin.isTTY) return runHeadless(config, trace, await readPipedInput());
+  if (task !== null) return runHeadless(config, trace, task);
   return runInteractive(config, trace, args.includes("--chat") || !config.exitAfterTask);
 }
 
 function describeModel(config) {
   const overrides = config.overrides.length > 0 ? ` (overridden by ${config.overrides.join(", ")})` : "";
   return `Model: ${config.model} at ${config.baseUrl}${overrides} · policy ${config.policy}`;
-}
-
-function readIssueVariable() {
-  const issue = process.env.ISSUE;
-  if (!issue) return null;
-  if (fs.existsSync(issue) && fs.statSync(issue).isFile()) return fs.readFileSync(issue, "utf8");
-  return issue;
-}
-
-function readPromptArgument(args) {
-  const index = args.findIndex((arg) => arg === "-p" || arg === "--prompt");
-  if (index === -1) return null;
-  return args[index + 1] ?? "";
 }
 
 async function runHeadless(config, trace, task) {
@@ -94,9 +82,9 @@ async function runInteractiveTask(agent, trace, text) {
 
 async function runTask(agent, trace, text, signal) {
   const startedAt = Date.now();
-  sessionSnapshot ??= takeProjectSnapshot();
   try {
-    const stats = await agent.runTask(text, signal);
+    const task = await prepareFirstTask(trace, text, signal);
+    const stats = await agent.runTask(task, signal);
     const result = { ...stats, seconds: (Date.now() - startedAt) / 1000 };
     writeFooter(result);
     trace.recordTaskEnd(result);
@@ -107,6 +95,14 @@ async function runTask(agent, trace, text, signal) {
     else writeError(`Error: ${error.message}`);
     lastStatus = signal.aborted ? "interrupted" : "error";
   }
+}
+
+async function prepareFirstTask(trace, text, signal) {
+  if (firstTaskStarted) return text;
+  firstTaskStarted = true;
+  const task = await runIntake(text, trace, signal);
+  sessionSnapshot = takeProjectSnapshot();
+  return task;
 }
 
 function finishSession(trace) {
