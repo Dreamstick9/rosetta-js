@@ -2,7 +2,7 @@ const DIM = "\x1b[2m";
 const RED = "\x1b[31m";
 const RESET = "\x1b[0m";
 const USE_COLOR = process.stdout.isTTY;
-const TOOL_MARKS = { ok: "→", error: "✗", denied: "⊘" };
+const TOOL_MARKS = { ok: "→", error: "✗" };
 const DETAIL_LENGTH = 120;
 
 let atLineStart = true;

@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { PROJECT_ROOT } from "../config.js";
-import { IGNORED_DIRECTORIES, resolveInsideRoot } from "./files.js";
+import { IGNORED_DIRECTORIES, resolvePath } from "./files.js";
 
 const MAX_MATCHES = 100;
 const MAX_LINE_LENGTH = 200;
@@ -22,7 +22,7 @@ export const searchTool = {
         type: "object",
         properties: {
           pattern: { type: "string", description: "Regular expression to search for." },
-          path: { type: "string", description: "File or directory to search, relative to the project root. Default '.'." },
+          path: { type: "string", description: "File or directory to search, relative to the project root or absolute. Default '.'." },
         },
         required: ["pattern"],
       },
@@ -32,7 +32,7 @@ export const searchTool = {
 };
 
 async function search({ pattern, path: target = "." }) {
-  const absolute = await resolveInsideRoot(target);
+  const absolute = resolvePath(target);
   const matches = HAS_RIPGREP ? await searchWithRipgrep(pattern, absolute) : await searchWithWalk(pattern, absolute);
   if (matches.length === 0) return "No matches.";
   const lines = matches.slice(0, MAX_MATCHES);

@@ -1,13 +1,10 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { PROJECT_ROOT } from "../config.js";
-import { findRiskReason } from "../safety.js";
 
 const COMMAND_TIMEOUT_MS = 120_000;
 const KILL_GRACE_MS = 2000;
 const SHELL_SETUP = "trap 'true' INT\n";
-
-export const DECLINED_MESSAGE = "The user declined this command.";
 
 class ShellSession {
   constructor() {
@@ -142,9 +139,7 @@ export const bashTool = {
   run: runBash,
 };
 
-async function runBash({ command }, { signal, approve }) {
-  const riskReason = findRiskReason(command, session.cwd);
-  if (riskReason && !(await approve(command, riskReason, signal))) return DECLINED_MESSAGE;
+async function runBash({ command }, { signal }) {
   const result = await session.run(command, signal);
   return formatResult(result);
 }

@@ -3,7 +3,7 @@ import { loadConfig } from "./config.js";
 import { Agent } from "./agent.js";
 import { Trace } from "./trace.js";
 import { stopShell } from "./tools/shell.js";
-import { askApproval, readPipedInput, readUserMessage, startTerminalInput, stopTerminalInput, watchForInterrupt } from "./input.js";
+import { readPipedInput, readUserMessage, startTerminalInput, stopTerminalInput, watchForInterrupt } from "./input.js";
 import { writeCostSummary, writeDimLine, writeError, writeFooter, writeLine } from "./ui.js";
 
 const HELP = `Commands:
@@ -33,13 +33,13 @@ function readPromptArgument(args) {
 
 async function runHeadless(config, trace, task) {
   if (!task.trim()) exitWithError('Usage: node src/cli.js -p "task"   (or pipe the task on stdin)');
-  const agent = new Agent({ config, trace, approve: async () => false });
+  const agent = new Agent({ config, trace });
   const succeeded = await runTask(agent, task, new AbortController().signal);
   process.exit(succeeded ? 0 : 1);
 }
 
 async function runInteractive(config, trace) {
-  const agent = new Agent({ config, trace, approve: createInteractiveApprover() });
+  const agent = new Agent({ config, trace });
   startTerminalInput();
   writeDimLine(`Model: ${config.model}. Type /help for commands.`);
   while (true) {
@@ -74,16 +74,6 @@ async function runTask(agent, text, signal) {
     else writeError(`Error: ${error.message}`);
     return false;
   }
-}
-
-function createInteractiveApprover() {
-  const alwaysAllowed = new Set();
-  return async function approve(command, reason, signal) {
-    if (alwaysAllowed.has(reason)) return true;
-    const answer = await askApproval(`  ! ${reason}: ${command}`, signal);
-    if (answer === "always") alwaysAllowed.add(reason);
-    return answer !== "no";
-  };
 }
 
 function handleCommand(agent, trace, command) {

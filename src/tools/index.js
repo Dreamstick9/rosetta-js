@@ -1,6 +1,6 @@
 import { FILE_TOOLS } from "./files.js";
 import { searchTool } from "./search.js";
-import { DECLINED_MESSAGE, bashTool } from "./shell.js";
+import { bashTool } from "./shell.js";
 
 const TOOLS = [...FILE_TOOLS, searchTool, bashTool];
 const READ_ONLY_TOOL_NAMES = new Set(["list_files", "read_file", "search"]);
@@ -41,8 +41,7 @@ async function runToolCall(call, context) {
   try {
     if (call.argumentsError) throw new Error(call.argumentsError);
     const output = await runTool(call.name, call.args, context);
-    const status = output === DECLINED_MESSAGE ? "denied" : "ok";
-    return { call, output, status, ms: Date.now() - startedAt };
+    return { call, output, status: "ok", ms: Date.now() - startedAt };
   } catch (error) {
     return { call, output: `Error: ${error.message}`, status: "error", ms: Date.now() - startedAt };
   }

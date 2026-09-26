@@ -26,8 +26,7 @@ cat task.txt | node /path/to/rosetta-js/src/cli.js
 
 - Interactive mode: type a message and press Enter. Pasted multi-line text is
   sent as one message.
-- Headless mode: `-p "task"`, or pipe the task on stdin. Risky commands are
-  denied automatically.
+- Headless mode: `-p "task"`, or pipe the task on stdin.
 - `make run` and `make test` also load `AI_API_KEY` from `.env` if it exists
   (see `.env.example`).
 
@@ -79,14 +78,14 @@ Environment variables:
 ## What it does for you
 
 - **Tools**: `list_files`, `read_file`, `create_file`, `write_file`,
-  `edit_file`, `delete_file`, `search`, `bash`. File tools cannot leave the
-  project root. Several read-only calls in one reply run at the same time.
+  `edit_file`, `delete_file`, `search`, `bash`. Paths are relative to the
+  folder the agent was started in, or absolute. Several read-only calls in one
+  reply run at the same time.
 - **bash**: one shell for the whole session, so `cd`, variables and virtualenvs
   carry over. Commands time out after 120 s.
-- **Safety**: network commands (curl, wget, nc, ssh, scp), package installs,
-  `rm -r`, `git push`, `git reset --hard`, `git clean`, and writes outside the
-  project and `/tmp` ask `allow? [y/N/a=always]` first. Any other answer counts
-  as no and becomes your next message.
+- **No guardrails** (this branch): every command runs without asking, and
+  the file tools can read and write anywhere your user account can. Run it only
+  in folders and on machines where that is fine.
 - **Done-check**: when a turn changed files, the agent's tests are run
   (`npm test`, pytest or unittest, `cargo test`, `go test`). On failure the
   model gets the last 60 lines and up to 2 more tries.

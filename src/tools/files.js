@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { PROJECT_ROOT } from "../config.js";
 
-const PATH_PROPERTY = { type: "string", description: "Path relative to the project root." };
+const PATH_PROPERTY = { type: "string", description: "Path relative to the project root, or an absolute path." };
 const CONTENT_PROPERTY = { type: "string", description: "Full file content." };
 const DEFAULT_LIST_DEPTH = 2;
 const DEFAULT_READ_LIMIT = 2000;
@@ -11,7 +11,7 @@ export const IGNORED_DIRECTORIES = new Set([".git", "node_modules", "dist", "bui
 
 export const FILE_TOOLS = [
   fileTool("list_files", "List files and directories. Directories end with '/'. Ignored folders are listed but not opened.", {
-    path: { type: "string", description: "Directory relative to the project root. Default '.'." },
+    path: { type: "string", description: "Directory relative to the project root, or an absolute path. Default '.'." },
     depth: { type: "integer", description: "How many levels deep to list. Default 2." },
   }, [], listFiles),
   fileTool("read_file", "Read a text file. Lines are returned with line numbers.", {
@@ -40,33 +40,12 @@ function fileTool(name, description, properties, required, run) {
   return { definition, run };
 }
 
-export async function resolveInsideRoot(relativePath) {
-  const absolute = path.resolve(PROJECT_ROOT, relativePath);
-  const realPath = await realPathOfNearestExisting(absolute);
-  if (!isInsideRoot(absolute) || !isInsideRoot(realPath)) {
-    throw new Error(`path '${relativePath}' is outside the project root`);
-  }
-  return absolute;
-}
-
-function isInsideRoot(absolute) {
-  const relative = path.relative(PROJECT_ROOT, absolute);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
-}
-
-async function realPathOfNearestExisting(absolute) {
-  try {
-    const realRoot = await fs.realpath(PROJECT_ROOT);
-    return path.join(PROJECT_ROOT, path.relative(realRoot, await fs.realpath(absolute)));
-  } catch {
-    const parent = path.dirname(absolute);
-    if (parent === absolute) return absolute;
-    return realPathOfNearestExisting(parent);
-  }
+export function resolvePath(inputPath) {
+  return path.resolve(PROJECT_ROOT, inputPath);
 }
 
 async function listFiles({ path: directory = ".", depth = DEFAULT_LIST_DEPTH }) {
-  const absolute = await resolveInsideRoot(directory);
+  const absolute = resolvePath(directory);
   const entries = await collectEntries(absolute, Math.max(1, depth));
   if (entries.length === 0) return "(empty directory)";
   return entries.join("\n");
@@ -92,7 +71,7 @@ async function collectEntries(directory, depth) {
 }
 
 async function readFile({ path: file, offset = 1, limit = DEFAULT_READ_LIMIT }) {
-  const lines = (await fs.readFile(await resolveInsideRoot(file), "utf8")).split("\n");
+  const lines = (await fs.readFile(resolvePath(file), "utf8")).split("\n");
   const start = Math.max(1, offset);
   const selected = lines.slice(start - 1, start - 1 + Math.max(1, limit));
   if (selected.length === 0) return `(no lines at offset ${start}; the file has ${lines.length} lines)`;
@@ -100,7 +79,7 @@ async function readFile({ path: file, offset = 1, limit = DEFAULT_READ_LIMIT }) 
 }
 
 async function createFile({ path: file, content }) {
-  const absolute = await resolveInsideRoot(file);
+  const absolute = resolvePath(file);
   await fs.mkdir(path.dirname(absolute), { recursive: true });
   try {
     await fs.writeFile(absolute, content, { flag: "wx" });
@@ -112,14 +91,14 @@ async function createFile({ path: file, content }) {
 }
 
 async function writeFile({ path: file, content }) {
-  const absolute = await resolveInsideRoot(file);
+  const absolute = resolvePath(file);
   await fs.mkdir(path.dirname(absolute), { recursive: true });
   await fs.writeFile(absolute, content);
   return `Wrote ${file}`;
 }
 
 async function editFile({ path: file, old_text: oldText, new_text: newText }) {
-  const absolute = await resolveInsideRoot(file);
+  const absolute = resolvePath(file);
   const content = await fs.readFile(absolute, "utf8");
   if (oldText === "") throw new Error("old_text must not be empty");
   const matchCount = content.split(oldText).length - 1;
@@ -131,6 +110,6 @@ async function editFile({ path: file, old_text: oldText, new_text: newText }) {
 }
 
 async function deleteFile({ path: file }) {
-  await fs.unlink(await resolveInsideRoot(file));
+  await fs.unlink(resolvePath(file));
   return `Deleted ${file}`;
 }

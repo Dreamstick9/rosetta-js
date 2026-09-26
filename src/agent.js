@@ -7,7 +7,7 @@ import { readTokenCounts } from "./trace.js";
 import { createReplyPrinter, writeDimLine, writeError, writeToolLine } from "./ui.js";
 
 const SYSTEM_PROMPT = `You are a coding agent working in the user's project directory.
-Use the tools to inspect, change and test the project. File paths are relative to the project root.
+Use the tools to inspect, change and test the project. Paths are relative to the project root, or absolute.
 Use search to find code. Read files before editing them, and prefer edit_file for small changes.
 The bash tool runs in one persistent shell, so cd and environment changes carry over between calls.
 When the project has tests, run them after making changes.
@@ -22,10 +22,9 @@ const FILE_TOOLS = new Set(["read_file", "create_file", "write_file", "edit_file
 const CHANGING_TOOLS = new Set(["create_file", "write_file", "edit_file", "delete_file", "bash"]);
 
 export class Agent {
-  constructor({ config, trace, approve }) {
+  constructor({ config, trace }) {
     this.config = config;
     this.trace = trace;
-    this.approve = approve;
     this.doneCheckEnabled = true;
     this.testCommand = findTestCommand();
     this.reset();
@@ -88,7 +87,7 @@ export class Agent {
   }
 
   async runTools(calls, signal, task) {
-    const results = await runToolCalls(calls, { signal, approve: this.approve });
+    const results = await runToolCalls(calls, { signal });
     for (const result of results) this.recordToolResult(result, task);
     signal.throwIfAborted();
   }

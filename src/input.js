@@ -1,4 +1,4 @@
-import { writeDimLine, writeLine, writeText } from "./ui.js";
+import { writeDimLine, writeText } from "./ui.js";
 
 const PASTE_START = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
@@ -10,8 +10,6 @@ const CTRL_C = "\x03";
 const CTRL_D = "\x04";
 const ENTER_KEYS = new Set(["\r", "\n"]);
 const BACKSPACE_KEYS = new Set(["\x7f", "\b"]);
-
-let pendingMessage = null;
 
 export function startTerminalInput() {
   process.stdin.setRawMode(true);
@@ -34,22 +32,9 @@ export async function readPipedInput() {
   return text.trim();
 }
 
-export async function readUserMessage() {
-  if (pendingMessage === null) return readLine("\n> ");
-  const message = pendingMessage;
-  pendingMessage = null;
-  writeLine(`\n> ${message}`);
-  return message;
-}
-
-export async function askApproval(question, signal) {
-  writeLine(question);
-  const answer = ((await readLine("  allow? [y/N/a=always] ", signal)) ?? "").trim();
-  const choice = answer.toLowerCase();
-  if (choice === "y") return "yes";
-  if (choice === "a") return "always";
-  if (choice !== "" && choice !== "n") pendingMessage = answer;
-  return "no";
+export function readUserMessage() {
+  writeText("\n> ");
+  return new Promise((resolve) => new LineEditor(resolve));
 }
 
 export function watchForInterrupt(onInterrupt) {
@@ -58,14 +43,6 @@ export function watchForInterrupt(onInterrupt) {
   };
   process.stdin.on("data", listener);
   return () => process.stdin.off("data", listener);
-}
-
-function readLine(prompt, signal) {
-  writeText(prompt);
-  return new Promise((resolve) => {
-    const editor = new LineEditor(resolve);
-    signal?.addEventListener("abort", () => editor.finish(null), { once: true });
-  });
 }
 
 class LineEditor {
