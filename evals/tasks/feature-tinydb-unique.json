@@ -1,0 +1,17 @@
+{
+  "id": "feature-tinydb-unique",
+  "category": "multistep",
+  "repo": "https://github.com/msiemens/tinydb",
+  "commit": "18d73a15066a04c77f19ae9a8c03d582bd344c0d",
+  "setup": [
+    "uv venv -q --seed --python 3.11 .venv",
+    "uv pip install -q --python .venv/bin/python -e . pytest pytest-cov"
+  ],
+  "task": "Feature request: unique indexes for tables\n\nWe keep ending up with duplicate users in our TinyDB database. Please add unique indexes:\n\n```python\nfrom tinydb import TinyDB, UniqueConstraintError\ndb = TinyDB('db.json')\nusers = db.table('users')\nusers.create_unique_index('email')\nusers.insert({'email': 'a@x.com'})\nusers.insert({'email': 'a@x.com'})   # raises UniqueConstraintError\n```\n\nRequirements:\n\n1. New module `tinydb/errors.py` with `TinyDBError(Exception)` and `UniqueConstraintError(TinyDBError)`. `UniqueConstraintError` has `table`, `field` and `value` attributes (the table name, the field and the duplicated value). Both classes can be imported from `tinydb` directly.\n2. `Table.create_unique_index(field)` adds a unique index on a top-level field. Calling it again for the same field does nothing. If the table already contains duplicate values for that field it raises `UniqueConstraintError` and the index is not created. `Table.unique_fields` returns the indexed field names as a list, in the order they were created. `Table.drop_unique_index(field)` removes an index (no error if there is none).\n3. Documents that do not have the field are not constrained. Values are compared by equality, and unhashable values such as lists must work too.\n4. Every write enforces the indexes: `insert`, `insert_multiple` (including duplicates inside the same batch), `update` (with a dict or a callable, by condition, by doc_ids or for all documents), `update_multiple` and `upsert`. An operation that would create a duplicate raises `UniqueConstraintError` and leaves the table exactly as it was, with no partial writes, for every storage including `MemoryStorage`.\n5. Indexes are saved in the database's storage, so they are still enforced after the database is closed and opened again. The saved index information must not show up as a table in `db.tables()`. `db.drop_table(name)` and `db.drop_tables()` also remove the indexes of the dropped tables.\n6. Because `TinyDB` forwards unknown attributes to its default table, `db.create_unique_index(...)` and `db.unique_fields` must work on the default table.\n\nAdd tests for the new behavior. All existing tests must keep passing.",
+  "hidden": {
+    "files": "hidden"
+  },
+  "grade": ".venv/bin/python -m pytest -q -p no:cacheprovider tests/test_hidden_unique.py && .venv/bin/python -m pytest -q -p no:cacheprovider",
+  "gold": "gold.patch",
+  "timeoutSeconds": 1200
+}

@@ -1,0 +1,192 @@
+diff --git a/tinydb/__init__.py b/tinydb/__init__.py
+index 0416e2e..11f573f 100644
+--- a/tinydb/__init__.py
++++ b/tinydb/__init__.py
+@@ -27,6 +27,8 @@ Usage example:
+ from .queries import Query, where
+ from .storages import Storage, JSONStorage
+ from .database import TinyDB
++from .errors import TinyDBError, UniqueConstraintError
+ from .version import __version__
+ 
+-__all__ = ('TinyDB', 'Storage', 'JSONStorage', 'Query', 'where')
++__all__ = ('TinyDB', 'Storage', 'JSONStorage', 'Query', 'where',
++           'TinyDBError', 'UniqueConstraintError')
+diff --git a/tinydb/database.py b/tinydb/database.py
+index 0cd2b7e..1fc9010 100644
+--- a/tinydb/database.py
++++ b/tinydb/database.py
+@@ -6,7 +6,7 @@ from collections.abc import Iterator
+ 
+ from . import JSONStorage
+ from .storages import Storage
+-from .table import Table, Document
++from .table import Table, Document, UNIQUE_INDEX_KEY
+ from .utils import with_typehint
+ 
+ # The table's base class. This is used to add type hinting from the Table
+@@ -158,7 +158,7 @@ class TinyDB(TableBase):
+         # so we need to consider this case to and return an empty set in this
+         # case.
+ 
+-        return set(self.storage.read() or {})
++        return set(self.storage.read() or {}) - {UNIQUE_INDEX_KEY}
+ 
+     def drop_tables(self) -> None:
+         """
+@@ -191,12 +191,17 @@ class TinyDB(TableBase):
+         if data is None:
+             return
+ 
++        indexes = data.get(UNIQUE_INDEX_KEY, {})
++
+         # The table does not exist, there's nothing to do
+-        if name not in data:
++        if name not in data and name not in indexes:
+             return
+ 
+-        # Remove the table from the data dict
+-        del data[name]
++        # Remove the table and its unique indexes from the data dict
++        data.pop(name, None)
++        indexes.pop(name, None)
++        if UNIQUE_INDEX_KEY in data and not indexes:
++            del data[UNIQUE_INDEX_KEY]
+ 
+         # Store the updated data back to the storage
+         self.storage.write(data)
+diff --git a/tinydb/errors.py b/tinydb/errors.py
+new file mode 100644
+index 0000000..a40bc2d
+--- /dev/null
++++ b/tinydb/errors.py
+@@ -0,0 +1,26 @@
++"""
++Exceptions raised by TinyDB.
++"""
++
++__all__ = ('TinyDBError', 'UniqueConstraintError')
++
++
++class TinyDBError(Exception):
++    """
++    Base class for all TinyDB errors.
++    """
++
++
++class UniqueConstraintError(TinyDBError):
++    """
++    Raised when a write would store a duplicate value in a unique field.
++    """
++
++    def __init__(self, table: str, field: str, value) -> None:
++        super().__init__(
++            f'Duplicate value {value!r} for unique field {field!r} '
++            f'in table {table!r}'
++        )
++        self.table = table
++        self.field = field
++        self.value = value
+diff --git a/tinydb/table.py b/tinydb/table.py
+index f4027bf..e6eb5e6 100644
+--- a/tinydb/table.py
++++ b/tinydb/table.py
+@@ -3,6 +3,7 @@ This module implements tables, the central place for accessing and manipulating
+ data in TinyDB.
+ """
+ 
++import copy
+ from collections.abc import Callable, Iterable, Iterator, Mapping, MutableMapping
+ from typing import (
+     NoReturn,
+@@ -14,9 +15,12 @@ from typing import (
+ 
+ from .queries import QueryLike
+ from .storages import Storage
+-from .utils import LRUCache
++from .errors import UniqueConstraintError
++from .utils import LRUCache, freeze
+ 
+-__all__ = ('Document', 'Table')
++__all__ = ('Document', 'Table', 'UNIQUE_INDEX_KEY')
++
++UNIQUE_INDEX_KEY = '__tinydb_unique_indexes__'
+ 
+ 
+ class Document(dict):
+@@ -771,6 +775,59 @@ class Table:
+ 
+         return next_id
+ 
++    @property
++    def unique_fields(self) -> list[str]:
++        """
++        The fields that must be unique in this table, in creation order.
++        """
++        tables = self._storage.read() or {}
++        return list(tables.get(UNIQUE_INDEX_KEY, {}).get(self.name, []))
++
++    def create_unique_index(self, field: str) -> None:
++        """
++        Require the values of ``field`` to be unique in this table.
++
++        :param field: the top-level field to index
++        :raises UniqueConstraintError: if the table already has duplicates
++        """
++        fields = self.unique_fields
++        if field in fields:
++            return
++        table = self._read_table()
++        self._check_unique(table.values(), [field])
++        self._write_unique_fields(fields + [field])
++
++    def drop_unique_index(self, field: str) -> None:
++        """
++        Remove the unique index on ``field`` if there is one.
++        """
++        fields = self.unique_fields
++        if field in fields:
++            fields.remove(field)
++            self._write_unique_fields(fields)
++
++    def _write_unique_fields(self, fields: list[str]) -> None:
++        tables = self._storage.read() or {}
++        indexes = tables.setdefault(UNIQUE_INDEX_KEY, {})
++        if fields:
++            indexes[self.name] = fields
++        else:
++            indexes.pop(self.name, None)
++        if not indexes:
++            del tables[UNIQUE_INDEX_KEY]
++        self._storage.write(tables)
++
++    def _check_unique(self, documents, fields) -> None:
++        for field in fields:
++            seen = []
++            for doc in documents:
++                if not isinstance(doc, Mapping) or field not in doc:
++                    continue
++                value = freeze(doc[field])
++                if value in seen:
++                    raise UniqueConstraintError(self.name, field, doc[field])
++                seen.append(value)
++
+     def _read_table(self) -> dict[str, Mapping]:
+         """
+         Read the table data from the underlying storage.
+@@ -831,8 +888,15 @@ class Table:
+             for doc_id, doc in raw_table.items()
+         }
+ 
++        # Documents may be changed in place, so work on a copy when the
++        # table has unique indexes that could reject the update
++        unique_fields = tables.get(UNIQUE_INDEX_KEY, {}).get(self.name, [])
++        if unique_fields:
++            table = copy.deepcopy(table)
++
+         # Perform the table update operation
+         updater(table)
++        self._check_unique(table.values(), unique_fields)
+ 
+         # Convert the document IDs back to strings.
+         # This is required as some storages (most notably the JSON file format)

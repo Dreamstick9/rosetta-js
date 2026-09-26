@@ -1,0 +1,17 @@
+{
+  "id": "refactor-tinydb-utils",
+  "category": "refactor",
+  "repo": "https://github.com/msiemens/tinydb",
+  "commit": "18d73a15066a04c77f19ae9a8c03d582bd344c0d",
+  "setup": [
+    "uv venv -q --seed --python 3.11 .venv",
+    "uv pip install -q --python .venv/bin/python -e . pytest pytest-cov"
+  ],
+  "task": "Refactor: split up `tinydb/utils.py`\n\n`tinydb/utils.py` has turned into a grab bag. Please split it into focused modules:\n\n- Move `LRUCache` (and the private helpers it needs) into a new module `tinydb/cache.py`.\n- Move `FrozenDict` and `freeze` into a new module `tinydb/frozen.py`.\n- `tinydb/utils.py` keeps only `with_typehint`. Do not leave re-exports, aliases or compatibility imports of the moved names in `tinydb/utils.py`.\n- Update every import inside the package to use the new modules.\n- Split `tests/test_utils.py` to match: the LRUCache tests go to `tests/test_cache.py` and the freeze/FrozenDict tests go to `tests/test_frozen.py` (delete `tests/test_utils.py` if nothing is left in it).\n\nThis is a pure refactor: no behavior changes, and the whole test suite must pass afterwards.",
+  "hidden": {
+    "files": "hidden"
+  },
+  "grade": ".venv/bin/python \"$EVAL_TASK_DIR/check.py\" && .venv/bin/python -m pytest -q -p no:cacheprovider",
+  "gold": "gold.patch",
+  "timeoutSeconds": 900
+}

@@ -1,0 +1,18 @@
+{
+  "id": "debug-marshmallow-errors",
+  "category": "debug",
+  "repo": "https://github.com/marshmallow-code/marshmallow",
+  "commit": "7f0792bd7a06f72e393ec866ac1e89e1502ccfe1",
+  "setup": [
+    "uv venv -q --seed --python 3.11 .venv",
+    "uv pip install -q --python .venv/bin/python -e . pytest simplejson",
+    "git apply \"$EVAL_TASK_DIR/bug.patch\""
+  ],
+  "task": "CI is red after the last merge: about 160 tests fail across many test files (test_schema.py, test_decorators.py, test_deserialization.py, test_fields.py and more), mostly with assertion errors about validation error messages.\n\nPlease find the root cause and fix it in the library code. The tests are correct: do not modify, skip or delete any test. When you are done, the whole test suite must pass.",
+  "restore": [
+    "tests"
+  ],
+  "grade": ".venv/bin/python -m pytest -q -p no:cacheprovider",
+  "gold": "gold.patch",
+  "timeoutSeconds": 900
+}
