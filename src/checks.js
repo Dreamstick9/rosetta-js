@@ -13,9 +13,9 @@ const VENV_PYTHON = ".venv/bin/python";
 const MAX_SNAPSHOT_ENTRIES = 20_000;
 const SNAPSHOT_SKIPPED_DIRECTORIES = new Set([...IGNORED_DIRECTORIES, "__pycache__", ".pytest_cache"]);
 
-export function takeProjectSnapshot() {
+export function takeProjectSnapshot(root = PROJECT_ROOT) {
   const snapshot = new Map();
-  const pendingDirectories = [PROJECT_ROOT];
+  const pendingDirectories = [root];
   let entryCount = 0;
   while (pendingDirectories.length > 0) {
     const directory = pendingDirectories.pop();
@@ -67,22 +67,22 @@ export function countChangedFiles(before, after) {
   return count;
 }
 
-export function findTestCommand() {
-  if (hasNpmTestScript()) return "npm test --silent";
-  if (isPythonProject()) return findPythonTestCommand();
-  if (exists("Cargo.toml")) return "cargo test";
-  if (exists("go.mod")) return "go test ./...";
+export function findTestCommand(root = PROJECT_ROOT) {
+  if (hasNpmTestScript(root)) return "npm test --silent";
+  if (isPythonProject(root)) return findPythonTestCommand(root);
+  if (exists(root, "Cargo.toml")) return "cargo test";
+  if (exists(root, "go.mod")) return "go test ./...";
   return null;
 }
 
-function exists(relativePath) {
-  return fs.existsSync(path.join(PROJECT_ROOT, relativePath));
+function exists(root, relativePath) {
+  return fs.existsSync(path.join(root, relativePath));
 }
 
-function hasNpmTestScript() {
-  if (!exists("package.json")) return false;
+function hasNpmTestScript(root) {
+  if (!exists(root, "package.json")) return false;
   try {
-    const packageJson = JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, "package.json"), "utf8"));
+    const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
     const testScript = packageJson.scripts?.test ?? "";
     return testScript !== "" && !testScript.includes(NPM_PLACEHOLDER_TEST);
   } catch {
@@ -90,28 +90,28 @@ function hasNpmTestScript() {
   }
 }
 
-function isPythonProject() {
-  return exists("pytest.ini") || exists("pyproject.toml") || exists("tests");
+function isPythonProject(root) {
+  return exists(root, "pytest.ini") || exists(root, "pyproject.toml") || exists(root, "tests");
 }
 
-function findPythonTestCommand() {
-  const python = exists(VENV_PYTHON) ? VENV_PYTHON : "python3";
-  const pytestCheck = spawnSync(python, ["-c", "import pytest"], { cwd: PROJECT_ROOT });
+function findPythonTestCommand(root) {
+  const python = exists(root, VENV_PYTHON) ? VENV_PYTHON : "python3";
+  const pytestCheck = spawnSync(python, ["-c", "import pytest"], { cwd: root });
   if (pytestCheck.status === 0) return `${python} -m pytest -q`;
   return `${python} -m unittest discover`;
 }
 
-export async function runDoneCheck(command, signal) {
-  const result = await runTestCommand(command, signal);
+export async function runDoneCheck(command, signal, root = PROJECT_ROOT) {
+  const result = await runTestCommand(command, signal, root);
   signal.throwIfAborted();
   writeDimLine(`check: ${command} ${result.passed ? "✓" : "✗"}`);
   const failureMessage = `I ran \`${command}\` after your changes and it failed. Last lines of output:\n${result.tail}\n\nPlease fix the problem.`;
   return { passed: result.passed, failureMessage };
 }
 
-function runTestCommand(command, signal) {
+function runTestCommand(command, signal, root) {
   return new Promise((resolve) => {
-    const child = spawn("bash", ["-c", command], { cwd: PROJECT_ROOT, env: buildChildEnvironment(), signal, timeout: CHECK_TIMEOUT_MS, killSignal: "SIGKILL" });
+    const child = spawn("bash", ["-c", command], { cwd: root, env: buildChildEnvironment(), signal, timeout: CHECK_TIMEOUT_MS, killSignal: "SIGKILL" });
     let output = "";
     child.stdout.on("data", (data) => (output += data));
     child.stderr.on("data", (data) => (output += data));

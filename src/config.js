@@ -16,6 +16,12 @@ const NUMBER_FIELDS = [
   "intake.maxComments", "intake.maxBodyChars", "intake.maxCommentChars", "intake.cloneDepth",
   "intake.apiTimeoutSeconds", "intake.gitTimeoutSeconds",
 ];
+const AGENT_NUMBER_FIELDS = [
+  "agents.maxParallelAgents", "agents.explorerMaxTurns", "agents.workerMaxTurns", "agents.reviewerMaxTurns",
+  "agents.explorerMaxUsd", "agents.workerMaxUsd", "agents.reviewerMaxUsd",
+  "agents.fanOutMinItems", "agents.fanOutMinFiles", "agents.tournamentSize",
+];
+const BOOLEAN_FIELDS = ["exitAfterTask", "agents.reviewerEnabled", "agents.autoTournament"];
 
 export const HARNESS_ROOT = fileURLToPath(new URL("..", import.meta.url)).replace(/\/$/, "");
 export let PROJECT_ROOT = process.cwd();
@@ -50,12 +56,14 @@ function checkFields(config) {
   for (const field of TEXT_FIELDS) {
     if (typeof readField(config, field) !== "string" || !readField(config, field)) failField(field, "a non-empty string");
   }
-  for (const field of NUMBER_FIELDS) {
+  for (const field of [...NUMBER_FIELDS, ...AGENT_NUMBER_FIELDS]) {
     if (typeof readField(config, field) !== "number") failField(field, "a number");
   }
   if (config.seed !== null && !Number.isInteger(config.seed)) failField("seed", "an integer or null");
   if (!POLICIES.includes(config.policy)) failField("policy", `one of ${POLICIES.join(", ")}`);
-  if (typeof config.exitAfterTask !== "boolean") failField("exitAfterTask", "true or false");
+  for (const field of BOOLEAN_FIELDS) {
+    if (typeof readField(config, field) !== "boolean") failField(field, "true or false");
+  }
 }
 
 function readField(config, field) {

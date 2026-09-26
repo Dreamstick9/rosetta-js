@@ -1,8 +1,10 @@
 import { FILE_TOOLS } from "./files.js";
 import { searchTool } from "./search.js";
-import { bashTool, getShellCwd } from "./shell.js";
+import { MAIN_SHELL, bashTool } from "./shell.js";
 import { skillTool } from "./skill.js";
+import { PROJECT_ROOT } from "../config.js";
 import { checkToolCall, describeBlock } from "../policy.js";
+import { describeToolRefusal } from "../roles.js";
 
 const TOOLS = [...FILE_TOOLS, searchTool, bashTool, skillTool];
 const READ_ONLY_TOOL_NAMES = new Set(["list_files", "read_file", "search", "skill"]);
@@ -11,7 +13,8 @@ const INTERRUPTED_RESULT = "Interrupted by the user.";
 
 export const TOOL_DEFINITIONS = TOOLS.map((tool) => tool.definition);
 
-export async function runToolCalls(calls, context) {
+export async function runToolCalls(calls, callerContext) {
+  const context = { ...callerContext, root: callerContext.root ?? PROJECT_ROOT, shell: callerContext.shell ?? MAIN_SHELL };
   const results = [];
   for (const batch of groupReadOnlyCalls(calls)) {
     if (context.signal.aborted) {
@@ -43,8 +46,10 @@ async function runToolCall(call, context) {
   try {
     if (call.argumentsError) throw new Error(call.argumentsError);
     const tool = findTool(call.name);
+    const refusal = describeToolRefusal(context.role, call.name);
+    if (refusal) throw new Error(refusal);
     checkArguments(tool.definition.function, call.args);
-    const blockedReason = checkToolCall(call.name, call.args, getShellCwd());
+    const blockedReason = checkToolCall(call.name, call.args, context.shell.currentCwd(), context.root);
     if (blockedReason) return { call, output: describeBlock(blockedReason), status: "blocked", ms: 0 };
     const output = await tool.run(call.args, context);
     return { call, output, status: "ok", ms: Date.now() - startedAt };

@@ -40,46 +40,46 @@ function fileTool(name, description, properties, required, run) {
   return { definition, run };
 }
 
-export function resolvePath(inputPath) {
-  return path.resolve(PROJECT_ROOT, inputPath);
+export function resolvePath(inputPath, root = PROJECT_ROOT) {
+  return path.resolve(root, inputPath);
 }
 
-async function listFiles({ path: directory = ".", depth = DEFAULT_LIST_DEPTH }) {
-  const absolute = resolvePath(directory);
-  const entries = await collectEntries(absolute, Math.max(1, depth));
+async function listFiles({ path: directory = ".", depth = DEFAULT_LIST_DEPTH }, { root }) {
+  const absolute = resolvePath(directory, root);
+  const entries = await collectEntries(absolute, Math.max(1, depth), root);
   if (entries.length === 0) return "(empty directory)";
   return entries.join("\n");
 }
 
-async function collectEntries(directory, depth) {
+async function collectEntries(directory, depth, root) {
   const results = [];
   const entries = await fs.readdir(directory, { withFileTypes: true });
   entries.sort((first, second) => first.name.localeCompare(second.name));
   for (const entry of entries) {
     const fullPath = path.join(directory, entry.name);
-    const shownPath = path.relative(PROJECT_ROOT, fullPath);
+    const shownPath = path.relative(root, fullPath);
     if (!entry.isDirectory()) {
       results.push(shownPath);
       continue;
     }
     results.push(`${shownPath}/`);
     if (depth > 1 && !IGNORED_DIRECTORIES.has(entry.name)) {
-      results.push(...(await collectEntries(fullPath, depth - 1)));
+      results.push(...(await collectEntries(fullPath, depth - 1, root)));
     }
   }
   return results;
 }
 
-async function readFile({ path: file, offset = 1, limit = DEFAULT_READ_LIMIT }) {
-  const lines = (await fs.readFile(resolvePath(file), "utf8")).split("\n");
+async function readFile({ path: file, offset = 1, limit = DEFAULT_READ_LIMIT }, { root }) {
+  const lines = (await fs.readFile(resolvePath(file, root), "utf8")).split("\n");
   const start = Math.max(1, offset);
   const selected = lines.slice(start - 1, start - 1 + Math.max(1, limit));
   if (selected.length === 0) return `(no lines at offset ${start}; the file has ${lines.length} lines)`;
   return selected.map((line, i) => `${String(start + i).padStart(6)}\t${line}`).join("\n");
 }
 
-async function createFile({ path: file, content }) {
-  const absolute = resolvePath(file);
+async function createFile({ path: file, content }, { root }) {
+  const absolute = resolvePath(file, root);
   await fs.mkdir(path.dirname(absolute), { recursive: true });
   try {
     await fs.writeFile(absolute, content, { flag: "wx" });
@@ -90,15 +90,15 @@ async function createFile({ path: file, content }) {
   return `Created ${file}`;
 }
 
-async function writeFile({ path: file, content }) {
-  const absolute = resolvePath(file);
+async function writeFile({ path: file, content }, { root }) {
+  const absolute = resolvePath(file, root);
   await fs.mkdir(path.dirname(absolute), { recursive: true });
   await fs.writeFile(absolute, content);
   return `Wrote ${file}`;
 }
 
-async function editFile({ path: file, old_text: oldText, new_text: newText }) {
-  const absolute = resolvePath(file);
+async function editFile({ path: file, old_text: oldText, new_text: newText }, { root }) {
+  const absolute = resolvePath(file, root);
   const content = await fs.readFile(absolute, "utf8");
   if (oldText === "") throw new Error("old_text must not be empty");
   const matchCount = content.split(oldText).length - 1;
@@ -109,7 +109,7 @@ async function editFile({ path: file, old_text: oldText, new_text: newText }) {
   return `Edited ${file}`;
 }
 
-async function deleteFile({ path: file }) {
-  await fs.unlink(resolvePath(file));
+async function deleteFile({ path: file }, { root }) {
+  await fs.unlink(resolvePath(file, root));
   return `Deleted ${file}`;
 }

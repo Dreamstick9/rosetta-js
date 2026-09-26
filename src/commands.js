@@ -16,19 +16,20 @@ const WRITING_REDIRECTS = new Set([">", ">>", ">|", "&>", "&>>", "<>"]);
 const OUTPUT_FLAGS = new Set(["-o", "--output", "-O", "--output-document", "-P"]);
 const FILE_DESCRIPTOR_PATTERN = /^(\d+|-)$/;
 
-export function checkCommandLine(commandLine, cwd, depth = 0) {
+export function checkCommandLine(commandLine, cwd, root, depth = 0) {
   if (depth > MAX_DEPTH) return "the command nests shells too deeply to check";
   const parsed = parseShell(commandLine, SHELL_ENVIRONMENT);
   const secret = parsed.variables.find(isSecretVariableName);
   if (secret) return `it reads the secret variable $${secret}`;
   for (const substitution of parsed.substitutions) {
-    const reason = checkCommandLine(substitution, cwd, depth + 1);
+    const reason = checkCommandLine(substitution, cwd, root, depth + 1);
     if (reason) return reason;
   }
   let currentCwd = cwd;
   for (const command of parsed.commands) {
     const words = stripPrefixWords(command.words);
-    const reason = checkRedirects(command.redirects, currentCwd) ?? checkWords(words, currentCwd) ?? checkCommand(words, command, currentCwd, depth);
+    const place = { cwd: currentCwd, root };
+    const reason = checkRedirects(command.redirects, place) ?? checkWords(words, place) ?? checkCommand(words, command, place, depth);
     if (reason) return reason;
     currentCwd = nextCwd(words, currentCwd);
   }
@@ -42,43 +43,43 @@ function stripPrefixWords(words) {
   return words.slice(start);
 }
 
-function checkRedirects(redirects, cwd) {
+function checkRedirects(redirects, place) {
   for (const { op, target } of redirects) {
     if (op === "<<<") continue;
     if ((op === ">&" || op === "<&") && FILE_DESCRIPTOR_PATTERN.test(target)) continue;
-    const absolute = path.resolve(cwd, target);
-    const reason = WRITING_REDIRECTS.has(op) || op === ">&" ? describeWriteProblem(absolute) : describeReadProblem(absolute);
+    const absolute = path.resolve(place.cwd, target);
+    const reason = WRITING_REDIRECTS.has(op) || op === ">&" ? describeWriteProblem(absolute, place.root) : describeReadProblem(absolute, place.root);
     if (reason) return reason;
   }
   return null;
 }
 
-function checkWords(words, cwd) {
+function checkWords(words, place) {
   for (const word of words) {
     const value = word.includes("=") ? word.slice(word.indexOf("=") + 1) : null;
-    const reason = describeReadProblem(path.resolve(cwd, word)) ?? (value ? describeReadProblem(path.resolve(cwd, value)) : null);
+    const reason = describeReadProblem(path.resolve(place.cwd, word), place.root) ?? (value ? describeReadProblem(path.resolve(place.cwd, value), place.root) : null);
     if (reason) return reason;
   }
   return null;
 }
 
-function checkCommand(words, command, cwd, depth) {
+function checkCommand(words, command, place, depth) {
   if (words.length === 0) return null;
   const name = path.basename(words[0]);
   const args = words.slice(1);
-  if (name === "rm") return checkDeletes(pathArguments(args), cwd, args.some(isRecursiveFlag));
-  if (DELETE_COMMANDS.has(name)) return checkDeletes(pathArguments(args), cwd, false);
-  if (WRITE_ALL_COMMANDS.has(name)) return checkWrites(pathArguments(args), cwd);
-  if (WRITE_LAST_COMMANDS.has(name)) return checkWrites(pathArguments(args).slice(-1), cwd);
-  if ((name === "sed" || name === "perl") && args.some((arg) => /^-\w*i/.test(arg))) return checkWrites(pathArguments(args), cwd);
-  if (name === "curl" || name === "wget") return checkWrites(flagValues(args, OUTPUT_FLAGS), cwd);
-  if (name === "dd") return checkWrites(args.filter((arg) => arg.startsWith("of=")).map((arg) => arg.slice(3)), cwd);
-  if (name === "find") return checkFind(args, cwd);
+  if (name === "rm") return checkDeletes(pathArguments(args), place, args.some(isRecursiveFlag));
+  if (DELETE_COMMANDS.has(name)) return checkDeletes(pathArguments(args), place, false);
+  if (WRITE_ALL_COMMANDS.has(name)) return checkWrites(pathArguments(args), place);
+  if (WRITE_LAST_COMMANDS.has(name)) return checkWrites(pathArguments(args).slice(-1), place);
+  if ((name === "sed" || name === "perl") && args.some((arg) => /^-\w*i/.test(arg))) return checkWrites(pathArguments(args), place);
+  if (name === "curl" || name === "wget") return checkWrites(flagValues(args, OUTPUT_FLAGS), place);
+  if (name === "dd") return checkWrites(args.filter((arg) => arg.startsWith("of=")).map((arg) => arg.slice(3)), place);
+  if (name === "find") return checkFind(args, place);
   if (name === "git") return checkGitCommand(args);
   if (name === "gh") return checkGhCommand(args);
   if (name === "printenv") return checkPrintenv(args);
-  if (name === "eval") return checkCommandLine(args.join(" "), cwd, depth + 1);
-  if (SHELLS.has(name)) return checkShellCommand(args, command, cwd, depth);
+  if (name === "eval") return checkCommandLine(args.join(" "), place.cwd, place.root, depth + 1);
+  if (SHELLS.has(name)) return checkShellCommand(args, command, place, depth);
   return null;
 }
 
@@ -100,28 +101,28 @@ function flagValues(args, flags) {
   return values;
 }
 
-function checkDeletes(targets, cwd, recursive) {
+function checkDeletes(targets, place, recursive) {
   for (const target of targets) {
-    const reason = describeDeleteProblem(path.resolve(cwd, target), recursive);
+    const reason = describeDeleteProblem(path.resolve(place.cwd, target), recursive, place.root);
     if (reason) return reason;
   }
   return null;
 }
 
-function checkWrites(targets, cwd) {
+function checkWrites(targets, place) {
   for (const target of targets) {
-    const reason = describeWriteProblem(path.resolve(cwd, target));
+    const reason = describeWriteProblem(path.resolve(place.cwd, target), place.root);
     if (reason) return reason;
   }
   return null;
 }
 
-function checkFind(args, cwd) {
+function checkFind(args, place) {
   const deletes = args.includes("-delete") || args.some((arg, index) => arg === "-exec" && args[index + 1] === "rm");
   if (!deletes) return null;
   const firstExpression = args.findIndex((arg) => arg.startsWith("-") || arg === "(" || arg === "!");
   const roots = firstExpression === -1 ? args : args.slice(0, firstExpression);
-  return checkDeletes(roots.length > 0 ? roots : ["."], cwd, true);
+  return checkDeletes(roots.length > 0 ? roots : ["."], place, true);
 }
 
 function checkPrintenv(args) {
@@ -130,11 +131,11 @@ function checkPrintenv(args) {
   return secret ? `it prints the secret variable ${secret}` : null;
 }
 
-function checkShellCommand(args, command, cwd, depth) {
+function checkShellCommand(args, command, place, depth) {
   const flagIndex = args.findIndex((arg) => /^-\w*c$/.test(arg));
-  if (flagIndex !== -1) return checkCommandLine(args[flagIndex + 1] ?? "", cwd, depth + 1);
+  if (flagIndex !== -1) return checkCommandLine(args[flagIndex + 1] ?? "", place.cwd, place.root, depth + 1);
   for (const body of command.heredocBodies) {
-    const reason = checkCommandLine(body, cwd, depth + 1);
+    const reason = checkCommandLine(body, place.cwd, place.root, depth + 1);
     if (reason) return reason;
   }
   return null;

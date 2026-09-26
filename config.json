@@ -56,5 +56,19 @@
     "cloneDepth": 1,
     "apiTimeoutSeconds": 20,
     "gitTimeoutSeconds": 180
+  },
+  "agents": {
+    "maxParallelAgents": 3,
+    "explorerMaxTurns": 15,
+    "workerMaxTurns": 40,
+    "reviewerMaxTurns": 10,
+    "explorerMaxUsd": 0.05,
+    "workerMaxUsd": 0.2,
+    "reviewerMaxUsd": 0.05,
+    "reviewerEnabled": false,
+    "fanOutMinItems": 2,
+    "fanOutMinFiles": 4,
+    "autoTournament": true,
+    "tournamentSize": 2
   }
 }
