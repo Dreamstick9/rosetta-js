@@ -4,10 +4,40 @@
   "maxContextTokens": 64000,
   "maxOutputTokens": 8192,
   "temperature": 0.2,
+  "topP": 1,
+  "seed": 7,
   "maxTurns": 60,
   "pricing": {
     "inputPerMTok": 0.035,
     "cachedInputPerMTok": 0.001,
     "outputPerMTok": 0.29
+  },
+  "context": {
+    "maxToolOutputBytes": 16000,
+    "compactStartShare": 0.7,
+    "compactTargetShare": 0.35,
+    "keptToolResults": 4
+  },
+  "agent": {
+    "maxEmptyReplyNudges": 2,
+    "maxCheckRounds": 2,
+    "failureTailLines": 60
+  },
+  "timeouts": {
+    "commandSeconds": 120,
+    "testCheckSeconds": 180,
+    "streamStallSeconds": 60
+  },
+  "retries": {
+    "maxRetries": 3,
+    "maxStallRetries": 1,
+    "baseBackoffMs": 1000,
+    "maxRetryAfterMs": 60000
+  },
+  "tools": {
+    "maxSearchMatches": 100,
+    "maxSearchLineLength": 200,
+    "listDepth": 2,
+    "readLineLimit": 2000
   }
 }

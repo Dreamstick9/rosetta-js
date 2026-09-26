@@ -2,11 +2,11 @@ import { execFile, spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { PROJECT_ROOT } from "../config.js";
+import { CONFIG, PROJECT_ROOT } from "../config.js";
 import { IGNORED_DIRECTORIES, resolvePath } from "./files.js";
 
-const MAX_MATCHES = 100;
-const MAX_LINE_LENGTH = 200;
+const MAX_MATCHES = CONFIG.tools.maxSearchMatches;
+const MAX_LINE_LENGTH = CONFIG.tools.maxSearchLineLength;
 const MAX_FILE_BYTES = 1_000_000;
 const RIPGREP_BUFFER_BYTES = 10_000_000;
 const HAS_RIPGREP = spawnSync("rg", ["--version"]).status === 0;
@@ -17,7 +17,7 @@ export const searchTool = {
     type: "function",
     function: {
       name: "search",
-      description: "Search file contents with a regular expression. Returns 'file:line: text', at most 100 matches.",
+      description: `Search file contents with a regular expression. Returns 'file:line: text', at most ${MAX_MATCHES} matches.`,
       parameters: {
         type: "object",
         properties: {

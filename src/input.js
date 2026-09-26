@@ -37,10 +37,14 @@ export async function readPipedInput() {
 }
 
 export async function readUserMessage() {
-  writeText("\n> ");
-  const message = await new Promise((resolve) => new LineEditor(resolve));
+  const message = await readAnswer(">");
   if (message?.trim()) history.push(message);
   return message;
+}
+
+export function readAnswer(question) {
+  writeText(`\n${question} `);
+  return new Promise((resolve) => new LineEditor(resolve));
 }
 
 export function watchForInterrupt(onInterrupt) {

@@ -1,10 +1,11 @@
 import { summarizeToolArguments } from "./tools/index.js";
+import { CONFIG } from "./config.js";
 
 const CHARS_PER_TOKEN = 4;
-const MAX_TOOL_OUTPUT_BYTES = 16000;
-const COMPACT_START_SHARE = 0.7;
-const COMPACT_TARGET_SHARE = 0.35;
-const KEPT_TOOL_RESULTS = 4;
+const MAX_TOOL_OUTPUT_BYTES = CONFIG.context.maxToolOutputBytes;
+const COMPACT_START_SHARE = CONFIG.context.compactStartShare;
+const COMPACT_TARGET_SHARE = CONFIG.context.compactTargetShare;
+const KEPT_TOOL_RESULTS = CONFIG.context.keptToolResults;
 
 let firstPrefix = null;
 

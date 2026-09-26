@@ -1,23 +1,23 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { PROJECT_ROOT } from "../config.js";
+import { CONFIG, PROJECT_ROOT } from "../config.js";
 
 const PATH_PROPERTY = { type: "string", description: "Path relative to the project root, or an absolute path." };
 const CONTENT_PROPERTY = { type: "string", description: "Full file content." };
-const DEFAULT_LIST_DEPTH = 2;
-const DEFAULT_READ_LIMIT = 2000;
+const DEFAULT_LIST_DEPTH = CONFIG.tools.listDepth;
+const DEFAULT_READ_LIMIT = CONFIG.tools.readLineLimit;
 
 export const IGNORED_DIRECTORIES = new Set([".git", "node_modules", "dist", "build", ".venv", "target"]);
 
 export const FILE_TOOLS = [
   fileTool("list_files", "List files and directories. Directories end with '/'. Ignored folders are listed but not opened.", {
     path: { type: "string", description: "Directory relative to the project root, or an absolute path. Default '.'." },
-    depth: { type: "integer", description: "How many levels deep to list. Default 2." },
+    depth: { type: "integer", description: `How many levels deep to list. Default ${DEFAULT_LIST_DEPTH}.` },
   }, [], listFiles),
   fileTool("read_file", "Read a text file. Lines are returned with line numbers.", {
     path: PATH_PROPERTY,
     offset: { type: "integer", description: "First line to read, starting at 1. Default 1." },
-    limit: { type: "integer", description: "Maximum number of lines to read. Default 2000." },
+    limit: { type: "integer", description: `Maximum number of lines to read. Default ${DEFAULT_READ_LIMIT}.` },
   }, ["path"], readFile),
   fileTool("create_file", "Create a new file. Fails if the file already exists.", {
     path: PATH_PROPERTY,

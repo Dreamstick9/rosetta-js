@@ -4,6 +4,7 @@ import { TOOL_DEFINITIONS, runToolCalls, summarizeToolArguments } from "./tools/
 import { compactMessages, estimateTokens, isPrefixStable, needsCompaction, truncateOutput } from "./context.js";
 import { findTestCommand, runDoneCheck, snapshotsDiffer, takeProjectSnapshot } from "./checks.js";
 import { readTokenCounts } from "./trace.js";
+import { CONFIG } from "./config.js";
 import { createReplyPrinter, writeDimLine, writeError, writeToolLine } from "./ui.js";
 
 const SYSTEM_PROMPT = `You are a coding agent working in the user's project directory.
@@ -15,8 +16,8 @@ Keep replies short. When you are done, say what you changed.`;
 
 const SYSTEM_MESSAGE = { role: "system", content: SYSTEM_PROMPT };
 const TOOL_TOKENS = estimateTokens(TOOL_DEFINITIONS);
-const MAX_NUDGES = 2;
-const MAX_CHECK_ROUNDS = 2;
+const MAX_NUDGES = CONFIG.agent.maxEmptyReplyNudges;
+const MAX_CHECK_ROUNDS = CONFIG.agent.maxCheckRounds;
 const NUDGE_MESSAGE = "Please continue.";
 const FILE_TOOLS = new Set(["read_file", "create_file", "write_file", "edit_file", "delete_file"]);
 const CHANGING_TOOLS = new Set(["create_file", "write_file", "edit_file", "delete_file", "bash"]);
@@ -26,7 +27,6 @@ export class Agent {
     this.config = config;
     this.trace = trace;
     this.doneCheckEnabled = true;
-    this.testCommand = findTestCommand();
     this.reset();
   }
 
@@ -42,19 +42,20 @@ export class Agent {
     this.currentRequest = userText;
     this.messages.push({ role: "user", content: userText });
     const stats = { cost: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0 };
-    const task = { stats, nudges: 0, checkRounds: 0, changedFiles: false, snapshot: takeProjectSnapshot() };
+    const task = { stats, outcome: "done", nudges: 0, checkRounds: 0, changedFiles: false, snapshot: takeProjectSnapshot() };
     for (let turn = 1; turn <= this.config.maxTurns; turn++) {
+      stats.turns = turn;
       const reply = await this.requestReply(signal, stats);
       if (reply.toolCalls.length > 0) {
         await this.runTools(reply.toolCalls, signal, task);
         continue;
       }
       const followUp = await this.findFollowUp(reply, signal, task);
-      if (!followUp) return stats;
+      if (!followUp) return { ...stats, outcome: task.outcome };
       this.messages.push({ role: "user", content: followUp });
     }
     writeError(`Stopped: this task reached maxTurns (${this.config.maxTurns} model calls).`);
-    return stats;
+    return { ...stats, outcome: "max_turns" };
   }
 
   async requestReply(signal, stats) {
@@ -107,6 +108,7 @@ export class Agent {
     if (reply.content.trim()) return this.checkWork(signal, task);
     if (task.nudges >= MAX_NUDGES) {
       writeError("The model returned an empty reply.");
+      task.outcome = "empty_reply";
       return null;
     }
     task.nudges++;
@@ -121,10 +123,14 @@ export class Agent {
     const filesChanged = snapshotsDiffer(task.snapshot, snapshot);
     task.snapshot = snapshot;
     if (!filesChanged) return null;
-    this.testCommand = findTestCommand();
-    if (!this.testCommand) return null;
-    const check = await runDoneCheck(this.testCommand, signal);
-    if (check.passed || task.checkRounds >= MAX_CHECK_ROUNDS) return null;
+    const testCommand = findTestCommand();
+    if (!testCommand) return null;
+    const check = await runDoneCheck(testCommand, signal);
+    if (check.passed) return null;
+    if (task.checkRounds >= MAX_CHECK_ROUNDS) {
+      task.outcome = "tests_failing";
+      return null;
+    }
     task.checkRounds++;
     return check.failureMessage;
   }

@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { PROJECT_ROOT } from "../config.js";
+import { CONFIG, PROJECT_ROOT } from "../config.js";
 
-const COMMAND_TIMEOUT_MS = 120_000;
+const COMMAND_TIMEOUT_MS = CONFIG.timeouts.commandSeconds * 1000;
 const KILL_GRACE_MS = 2000;
 const IGNORE_INTERRUPTS = "trap 'true' INT";
 const SHELL_SETUP = `__rosetta_run() { trap 'return 130' INT; eval "$1"; }\n${IGNORE_INTERRUPTS}\n`;
@@ -10,13 +10,14 @@ const SHELL_SETUP = `__rosetta_run() { trap 'return 130' INT; eval "$1"; }\n${IG
 class ShellSession {
   constructor() {
     this.child = null;
-    this.cwd = PROJECT_ROOT;
+    this.cwd = null;
     this.output = "";
     this.marker = null;
     this.resolveCommand = null;
   }
 
   start() {
+    this.cwd ??= PROJECT_ROOT;
     this.child = spawn("bash", ["--noprofile", "--norc"], { cwd: this.cwd, detached: true });
     this.child.stdout.setEncoding("utf8");
     this.child.stderr.setEncoding("utf8");
@@ -130,7 +131,7 @@ export const bashTool = {
     type: "function",
     function: {
       name: "bash",
-      description: "Run a command in one persistent bash shell (cd, env vars and virtualenvs carry over). No interactive input. Timeout 120s.",
+      description: `Run a command in one persistent bash shell (cd, env vars and virtualenvs carry over). No interactive input. Timeout ${COMMAND_TIMEOUT_MS / 1000}s.`,
       parameters: {
         type: "object",
         properties: { command: { type: "string", description: "The bash command to run." } },

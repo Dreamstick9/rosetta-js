@@ -7,8 +7,9 @@ const TOKENS_PER_MILLION = 1_000_000;
 const RUNS_DIRECTORY = fileURLToPath(new URL("../runs/", import.meta.url));
 
 export class Trace {
-  constructor(pricing) {
-    this.pricing = pricing;
+  constructor(config) {
+    this.config = config;
+    this.pricing = config.pricing;
     this.file = null;
     this.totals = { modelCalls: 0, toolCalls: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, cost: 0 };
   }
@@ -33,10 +34,14 @@ export class Trace {
     this.write({ type: "compaction", before, after });
   }
 
+  recordTaskEnd({ outcome, turns, seconds, cost, inputTokens, cachedTokens, outputTokens }) {
+    this.write({ type: "task", outcome, turns, seconds: Number(seconds.toFixed(1)), cost: Number(cost.toFixed(8)), inputTokens, cachedTokens, outputTokens });
+  }
+
   write(entry) {
     if (!this.file) {
       this.file = createTraceFile();
-      this.write({ type: "session", projectRoot: PROJECT_ROOT });
+      this.write(describeSession(this.config));
     }
     const line = JSON.stringify({ time: new Date().toISOString(), ...entry });
     fs.appendFileSync(this.file, `${line}\n`);
@@ -49,6 +54,19 @@ export function readTokenCounts(usage, estimatedInputTokens, estimatedOutputToke
     inputTokens: usage.prompt_tokens ?? 0,
     cachedTokens: usage.prompt_tokens_details?.cached_tokens ?? usage.prompt_cache_hit_tokens ?? 0,
     outputTokens: usage.completion_tokens ?? 0,
+  };
+}
+
+function describeSession(config) {
+  return {
+    type: "session",
+    projectRoot: PROJECT_ROOT,
+    model: config.model,
+    baseUrl: config.baseUrl,
+    overrides: config.overrides,
+    temperature: config.temperature,
+    topP: config.topP,
+    seed: config.seed,
   };
 }
 

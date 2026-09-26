@@ -1,11 +1,12 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { parseStream } from "./stream.js";
+import { CONFIG } from "./config.js";
 
-const MAX_RETRIES = 3;
-const MAX_STALL_RETRIES = 1;
-const STALL_TIMEOUT_MS = 60_000;
-const BASE_BACKOFF_MS = 1000;
-const MAX_RETRY_AFTER_MS = 60_000;
+const MAX_RETRIES = CONFIG.retries.maxRetries;
+const MAX_STALL_RETRIES = CONFIG.retries.maxStallRetries;
+const STALL_TIMEOUT_MS = CONFIG.timeouts.streamStallSeconds * 1000;
+const BASE_BACKOFF_MS = CONFIG.retries.baseBackoffMs;
+const MAX_RETRY_AFTER_MS = CONFIG.retries.maxRetryAfterMs;
 
 export async function requestCompletion(request) {
   const attempts = { retries: 0, stallRetries: 0 };
@@ -54,19 +55,26 @@ async function sendRequest(config, messages, tools, signal) {
   const response = await fetch(`${config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${config.apiKey}` },
-    body: JSON.stringify({
-      model: config.model,
-      messages,
-      tools,
-      temperature: config.temperature,
-      max_tokens: config.maxOutputTokens,
-      stream: true,
-      stream_options: { include_usage: true },
-    }),
+    body: JSON.stringify(buildRequestBody(config, messages, tools)),
     signal,
   });
   if (response.ok) return response;
   throw await createHttpError(response);
+}
+
+function buildRequestBody(config, messages, tools) {
+  const body = {
+    model: config.model,
+    messages,
+    tools,
+    temperature: config.temperature,
+    top_p: config.topP,
+    max_tokens: config.maxOutputTokens,
+    stream: true,
+    stream_options: { include_usage: true },
+  };
+  if (config.seed !== null) body.seed = config.seed;
+  return body;
 }
 
 async function createHttpError(response) {

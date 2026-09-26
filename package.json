@@ -4,7 +4,7 @@
   "description": "A very basic coding-agent harness for OpenAI-compatible APIs.",
   "type": "module",
   "bin": { "rosetta": "src/cli.js" },
-  "engines": { "node": ">=20" },
+  "engines": { "node": ">=20.6" },
   "scripts": {
     "start": "node src/cli.js"
   }

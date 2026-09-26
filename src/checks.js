@@ -1,12 +1,12 @@
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { PROJECT_ROOT } from "./config.js";
+import { CONFIG, PROJECT_ROOT } from "./config.js";
 import { IGNORED_DIRECTORIES } from "./tools/files.js";
 import { writeDimLine } from "./ui.js";
 
-const CHECK_TIMEOUT_MS = 180_000;
-const FAILURE_TAIL_LINES = 60;
+const CHECK_TIMEOUT_MS = CONFIG.timeouts.testCheckSeconds * 1000;
+const FAILURE_TAIL_LINES = CONFIG.agent.failureTailLines;
 const NPM_PLACEHOLDER_TEST = "no test specified";
 const VENV_PYTHON = ".venv/bin/python";
 const MAX_SNAPSHOT_ENTRIES = 20_000;
