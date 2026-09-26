@@ -4,7 +4,7 @@ const CATALOG_HINT = "Skills are step-by-step guides for common kinds of work. W
 export function selectCatalogSkills(skills, maxSkills) {
   const byPriority = [];
   for (const scope of SCOPE_PRIORITY) {
-    byPriority.push(...skills.filter((skill) => skill.scope === scope));
+    byPriority.push(...skills.filter((skill) => skill.scope === scope && !skill.internal));
   }
   const selected = byPriority.slice(0, maxSkills);
   return selected.sort((first, second) => compareNames(first.name, second.name));

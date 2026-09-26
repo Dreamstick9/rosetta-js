@@ -12,7 +12,8 @@ export function parseSkillFile(text) {
   const name = fields.get("name") ?? "";
   const description = fields.get("description") ?? "";
   if (!NAME_PATTERN.test(name) || !description) return null;
-  return { name, description, body: lines.slice(end + 1).join("\n").trim() };
+  const skill = { name, description, body: lines.slice(end + 1).join("\n").trim() };
+  return fields.get("internal") === "true" ? { ...skill, internal: true } : skill;
 }
 
 function readFields(lines) {

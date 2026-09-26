@@ -5,6 +5,7 @@ import { CONFIG, PROJECT_ROOT } from "./config.js";
 import { buildChildEnvironment } from "./environment.js";
 import { IGNORED_DIRECTORIES } from "./tools/files.js";
 import { writeDimLine } from "./ui.js";
+import { digestOutput } from "./digest/index.js";
 
 const CHECK_TIMEOUT_MS = CONFIG.timeouts.testCheckSeconds * 1000;
 const FAILURE_TAIL_LINES = CONFIG.agent.failureTailLines;
@@ -101,12 +102,19 @@ function findPythonTestCommand(root) {
   return `${python} -m unittest discover`;
 }
 
-export async function runDoneCheck(command, signal, root = PROJECT_ROOT) {
+export async function runDoneCheck(command, signal, root = PROJECT_ROOT, outputDirectory = null) {
   const result = await runTestCommand(command, signal, root);
   signal.throwIfAborted();
   writeDimLine(`check: ${command} ${result.passed ? "✓" : "✗"}`);
-  const failureMessage = `I ran \`${command}\` after your changes and it failed. Last lines of output:\n${result.tail}\n\nPlease fix the problem.`;
-  return { passed: result.passed, failureMessage };
+  if (result.passed) return { passed: true };
+  const failureMessage = `I ran \`${command}\` after your changes and it failed. Output:\n${describeFailure(command, result.output, outputDirectory)}\n\nPlease fix the problem.`;
+  return { passed: false, failureMessage };
+}
+
+function describeFailure(command, output, outputDirectory) {
+  const digest = digestOutput(command, output.trimEnd(), outputDirectory);
+  if (digest !== output.trimEnd()) return digest;
+  return lastLines(output, FAILURE_TAIL_LINES);
 }
 
 function runTestCommand(command, signal, root) {
@@ -118,7 +126,7 @@ function runTestCommand(command, signal, root) {
     child.on("error", (error) => (output += `\n${error.message}`));
     child.on("close", (exitCode) => {
       if (exitCode === null) output += `\n[the test command was stopped (timeout ${CHECK_TIMEOUT_MS / 1000}s or interrupt)]`;
-      resolve({ passed: exitCode === 0, tail: lastLines(output, FAILURE_TAIL_LINES) });
+      resolve({ passed: exitCode === 0, output });
     });
   });
 }

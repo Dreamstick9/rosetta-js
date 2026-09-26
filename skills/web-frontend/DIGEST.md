@@ -1,0 +1,6 @@
+- Find the component and its test; run only that test file first (`npx --no-install vitest run path` or `npx --no-install jest path`).
+- Read the assertion: Expected vs Received, and the first frame in src/.
+- Tests query by role/label/text: keep accessible names and visible text stable.
+- State updates are async: use findBy*/waitFor, not arbitrary timeouts; keep hooks at top level with correct deps.
+- Do not rewrite snapshots to hide a real regression; keep props and exports backward compatible.
+- No network: no npm install; run the whole suite at the end.

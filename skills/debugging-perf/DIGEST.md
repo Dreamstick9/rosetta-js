@@ -1,0 +1,6 @@
+- Measure before changing anything: time the slow command and profile to find the hot spot (e.g. `python3 -m cProfile -s cumtime`).
+- Fix the algorithm or data structure at the hot spot: quadratic loops, repeated IO or parsing, missing caching, N+1 queries.
+- Hangs: look for blocking IO, lock ordering, waits on queues nothing writes to, infinite retries.
+- Flaky: shared global state, test order, time, randomness, unordered collections; loop the test to measure the failure rate.
+- Keep behavior identical; measure again and compare before/after.
+- Run the full test suite; remove profiling and debug code.

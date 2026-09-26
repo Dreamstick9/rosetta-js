@@ -1,0 +1,6 @@
+- Locate the route: search the URL path from the issue, including router/blueprint prefixes, to find the handler file:line.
+- Reproduce in-process with the framework's test client before editing; compare status code and body.
+- Keep the response contract: status codes, JSON field names and error shapes that clients or tests rely on.
+- Validate input at the boundary and return 4xx for bad input, not 500; do not leak tracebacks.
+- DB changes: commit or roll back in the same request; watch for N+1 queries in list endpoints.
+- Run the endpoint's tests, then the full suite.

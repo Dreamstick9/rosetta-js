@@ -1,0 +1,6 @@
+- Run one test with `go test ./pkg -run '^TestName$' -count=1`; build errors come before test failures.
+- Wrap errors with `%w` and compare with errors.Is/As; never ignore a returned error.
+- Nil maps and nil pointers panic on write/deref: initialize before use.
+- Concurrency: guard shared state with a mutex or channel, pass context, and check with `go test -race` when relevant.
+- Keep exported names and signatures stable; follow table-driven test style for new cases.
+- Finish with `gofmt -l .`, `go vet ./...` and `go test ./...`.

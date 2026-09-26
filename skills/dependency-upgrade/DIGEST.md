@@ -1,0 +1,6 @@
+- Inventory first: declared range vs locked vs installed version for the dependency (manifest + lockfile).
+- Read the changelog between the old and new version for breaking, removed and deprecated APIs.
+- Find every use of the changed API in the repo and update all call sites together.
+- Keep the manifest and lockfile consistent; do not bump unrelated dependencies.
+- No network: work with the installed versions and vendored sources.
+- Run the full test suite after the upgrade.

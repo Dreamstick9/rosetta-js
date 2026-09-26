@@ -1,0 +1,6 @@
+- Reproduce first with the smallest command or test; confirm it fails before editing.
+- Read the evidence: exception type, message and the deepest frame in project code; search the code for the message.
+- Test one hypothesis at a time with a cheap experiment; do not change several things at once.
+- Fix the root cause, not the symptom: no broad try/except, sleeps or special-casing the test input.
+- Do not trust the issue's guess about the cause without checking; look for the same bug pattern in sibling code.
+- Add a regression test, run the full suite, and remove debug prints.

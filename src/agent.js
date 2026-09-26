@@ -1,11 +1,14 @@
+import path from "node:path";
 import { requestCompletion } from "./model.js";
 import { buildAssistantMessage } from "./stream.js";
 import { TOOL_DEFINITIONS, runToolCalls, summarizeToolArguments } from "./tools/index.js";
 import { compactMessages, estimateTokens, isPrefixStable, needsCompaction, truncateOutput } from "./context.js";
 import { findTestCommand, runDoneCheck, snapshotsDiffer, takeProjectSnapshot } from "./checks.js";
 import { readTokenCounts } from "./trace.js";
-import { CONFIG } from "./config.js";
+import { CONFIG, PROJECT_ROOT } from "./config.js";
 import { buildSessionPrompt, describeLoadedContext } from "./prompt.js";
+import { addSkillNotes } from "./skills-internal/index.js";
+import { digestOutput } from "./digest/index.js";
 import { createReplyPrinter, writeDimLine, writeError, writeToolLine } from "./ui.js";
 
 const TOOL_TOKENS = estimateTokens(TOOL_DEFINITIONS);
@@ -35,7 +38,7 @@ export class Agent {
     this.loadSystemMessage();
     this.originalTask ??= userText;
     this.currentRequest = userText;
-    this.messages.push({ role: "user", content: userText });
+    this.messages.push({ role: "user", content: this.messages.length === 1 ? addSkillNotes(userText, this.config) : userText });
     const stats = { cost: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0 };
     const task = { stats, outcome: "done", nudges: 0, checkRounds: 0, changedFiles: false, snapshot: takeProjectSnapshot() };
     for (let turn = 1; turn <= this.config.maxTurns; turn++) {
@@ -104,7 +107,7 @@ export class Agent {
   }
 
   recordToolResult({ call, output, status, ms }, task) {
-    const content = truncateOutput(output);
+    const content = truncateOutput(call.name === "bash" ? digestOutput(call.args.command, output, this.outputDirectory()) : output);
     const summary = summarizeToolArguments(call.args);
     writeToolLine({ name: call.name, summary, status, output });
     const reason = status === "blocked" ? output : undefined;
@@ -136,7 +139,7 @@ export class Agent {
     if (!filesChanged) return null;
     const testCommand = findTestCommand();
     if (!testCommand) return null;
-    const check = await runDoneCheck(testCommand, signal);
+    const check = await runDoneCheck(testCommand, signal, PROJECT_ROOT, this.outputDirectory());
     if (check.passed) return null;
     if (task.checkRounds >= MAX_CHECK_ROUNDS) {
       task.outcome = "tests_failing";
@@ -160,6 +163,10 @@ export class Agent {
     const after = this.estimateContextTokens();
     writeDimLine(`[context compacted: ${before} → ${after} tokens]`);
     this.trace.recordCompaction({ before, after });
+  }
+
+  outputDirectory() {
+    return this.trace.file && path.join(path.dirname(this.trace.file), "out");
   }
 
   estimateContextTokens() {

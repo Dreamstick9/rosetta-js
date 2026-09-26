@@ -1,0 +1,6 @@
+- Typecheck with the project's own tool: `npx --no-install tsc --noEmit -p .` (or the package.json typecheck script).
+- Fix the file with the most errors first; one root type change often clears many errors downstream.
+- Fix types properly: narrow unions, fix the value or the declared type; never `as any`, `@ts-ignore` or loosening tsconfig.
+- TS2307 on a path alias: check tsconfig `paths`/`baseUrl`; ESM imports may need the `.js` suffix.
+- Respect the module system (package.json "type", exports/main/types); do not mix require and import.
+- No network: no npm install; re-run tsc and the tests after each change.

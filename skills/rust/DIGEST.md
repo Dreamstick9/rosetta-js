@@ -1,0 +1,6 @@
+- Use `cargo test -p CRATE NAME` for one test and `cargo check --all-targets` for compile errors; add `--offline` if deps are vendored.
+- Fix the first compiler error per file first; later errors are often caused by it.
+- Borrow errors: shorten borrows, clone small data, or restructure; do not add `unsafe` or needless `Rc<RefCell>`.
+- Replace `unwrap()` on user input with proper `Result` handling; keep public signatures stable.
+- Match the existing error type and module style; respect feature flags and cfg(test) modules.
+- Finish with `cargo test` for the whole workspace.

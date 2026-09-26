@@ -1,0 +1,6 @@
+- Build offline with the wrapper when present (`./mvnw -o -q test` or `./gradlew --offline test`); run one test with -Dtest=Class#method or --tests.
+- Fix the first javac/kotlinc error per file; read the "Caused by" root cause in stack traces.
+- NPEs: find which reference is null and why; do not just add null checks that hide the bug.
+- Keep public API and serialization formats stable; match the code style of the module.
+- Kotlin: respect nullability instead of using `!!`.
+- Run the module's tests, then the full build.

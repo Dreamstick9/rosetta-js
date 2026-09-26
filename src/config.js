@@ -14,14 +14,14 @@ const NUMBER_FIELDS = [
   "tools.maxSearchMatches", "tools.maxSearchLineLength", "tools.listDepth", "tools.readLineLimit",
   "skills.maxInstructionTokens", "skills.maxCatalogSkills", "skills.maxDescriptionChars", "skills.maxSkillFiles",
   "intake.maxComments", "intake.maxBodyChars", "intake.maxCommentChars", "intake.cloneDepth",
-  "intake.apiTimeoutSeconds", "intake.gitTimeoutSeconds",
+  "intake.apiTimeoutSeconds", "intake.gitTimeoutSeconds", "skills.maxAuto", "digest.minLines",
 ];
 const AGENT_NUMBER_FIELDS = [
   "agents.maxParallelAgents", "agents.explorerMaxTurns", "agents.workerMaxTurns", "agents.reviewerMaxTurns",
   "agents.explorerMaxUsd", "agents.workerMaxUsd", "agents.reviewerMaxUsd",
   "agents.fanOutMinItems", "agents.fanOutMinFiles", "agents.tournamentSize",
 ];
-const BOOLEAN_FIELDS = ["exitAfterTask", "agents.reviewerEnabled", "agents.autoTournament"];
+const BOOLEAN_FIELDS = ["exitAfterTask", "agents.reviewerEnabled", "agents.autoTournament", "skills.internal", "skills.detect", "digest.enabled"];
 
 export const HARNESS_ROOT = fileURLToPath(new URL("..", import.meta.url)).replace(/\/$/, "");
 export let PROJECT_ROOT = process.cwd();
