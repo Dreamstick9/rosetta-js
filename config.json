@@ -3,5 +3,11 @@
   "model": "deepseek/deepseek-v4.1-flash",
   "maxContextTokens": 64000,
   "maxOutputTokens": 8192,
-  "temperature": 0.2
+  "temperature": 0.2,
+  "maxTurns": 60,
+  "pricing": {
+    "inputPerMTok": 0.035,
+    "cachedInputPerMTok": 0.001,
+    "outputPerMTok": 0.29
+  }
 }

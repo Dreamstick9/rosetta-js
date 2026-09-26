@@ -1,8 +1,18 @@
+import { summarizeToolArguments } from "./tools/index.js";
+
 const CHARS_PER_TOKEN = 4;
 const MAX_TOOL_OUTPUT_BYTES = 16000;
-const COMPACT_THRESHOLD = 0.7;
-const RECENT_BUDGET_SHARE = 0.3;
-const KEPT_TOOL_RESULTS = 3;
+const COMPACT_START_SHARE = 0.7;
+const COMPACT_TARGET_SHARE = 0.35;
+const KEPT_TOOL_RESULTS = 4;
+
+let firstPrefix = null;
+
+export function isPrefixStable(systemMessage, toolDefinitions) {
+  const prefix = JSON.stringify([systemMessage, toolDefinitions]);
+  firstPrefix ??= prefix;
+  return prefix === firstPrefix;
+}
 
 export function estimateTokens(value) {
   const text = typeof value === "string" ? value : JSON.stringify(value);
@@ -14,10 +24,10 @@ export function truncateOutput(text, maxBytes = MAX_TOOL_OUTPUT_BYTES) {
   if (bytes.length <= maxBytes) return text;
   const headEnd = charStartAtOrBefore(bytes, Math.floor(maxBytes / 2));
   const tailStart = charStartAtOrAfter(bytes, bytes.length - Math.floor(maxBytes / 2));
-  const omitted = bytes.subarray(headEnd, tailStart).toString("utf8").split("\n").length;
+  const omittedLines = bytes.subarray(headEnd, tailStart).toString("utf8").split("\n").length;
   const head = bytes.subarray(0, headEnd).toString("utf8");
   const tail = bytes.subarray(tailStart).toString("utf8");
-  return `${head}\n[${omitted} lines omitted]\n${tail}`;
+  return `${head}\n[${omittedLines} lines omitted]\n${tail}`;
 }
 
 function charStartAtOrBefore(bytes, index) {
@@ -34,54 +44,73 @@ function isContinuationByte(byte) {
   return (byte & 0xc0) === 0x80;
 }
 
-export function isOverThreshold(tokens, maxContextTokens) {
-  return tokens > maxContextTokens * COMPACT_THRESHOLD;
+export function needsCompaction(tokens, maxContextTokens) {
+  return tokens > maxContextTokens * COMPACT_START_SHARE;
 }
 
-export function stubOldToolResults(messages) {
-  const toolIndexes = messages.flatMap((message, index) => (message.role === "tool" ? [index] : []));
-  const labels = toolCallLabels(messages);
-  const oldIndexes = toolIndexes.slice(0, -KEPT_TOOL_RESULTS);
-  return messages.map((message, index) =>
-    oldIndexes.includes(index) ? { ...message, content: `[old result of ${labels.get(message.tool_call_id) ?? "tool"} removed]` } : message,
-  );
+export function compactMessages(messages, details) {
+  const targetTokens = details.maxContextTokens * COMPACT_TARGET_SHARE;
+  const stubbed = stubOldToolResults(messages);
+  if (estimateTokens(stubbed) + details.toolTokens <= targetTokens) return stubbed;
+  return rebuildConversation(stubbed, details, targetTokens);
 }
 
-function toolCallLabels(messages) {
+function stubOldToolResults(messages) {
+  const toolIndexes = [];
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i].role === "tool") toolIndexes.push(i);
+  }
+  const oldIndexes = new Set(toolIndexes.slice(0, -KEPT_TOOL_RESULTS));
+  const labels = labelToolCalls(messages);
+  return messages.map((message, index) => {
+    if (!oldIndexes.has(index)) return message;
+    return { ...message, content: `[old result of ${labels.get(message.tool_call_id) ?? "tool"} removed]` };
+  });
+}
+
+function labelToolCalls(messages) {
   const labels = new Map();
-  for (const call of messages.flatMap((message) => message.tool_calls ?? [])) {
-    labels.set(call.id, `${call.function.name} ${pathArgument(call.function.arguments)}`.trim());
+  for (const message of messages) {
+    for (const call of message.tool_calls ?? []) {
+      const summary = summarizeToolArguments(parseArguments(call.function.arguments));
+      labels.set(call.id, `${call.function.name} ${summary}`.trim());
+    }
   }
   return labels;
 }
 
-function pathArgument(argumentsJson) {
+function parseArguments(argumentsJson) {
   try {
-    return JSON.parse(argumentsJson).path ?? "";
+    return JSON.parse(argumentsJson);
   } catch {
-    return "";
+    return {};
   }
 }
 
-export function rebuildConversation(messages, { originalTask, currentRequest, touchedFiles, maxContextTokens }) {
-  const start = recentStartIndex(messages, maxContextTokens * RECENT_BUDGET_SHARE);
-  const recent = messages.slice(start);
-  const lines = [
+function rebuildConversation(messages, details, targetTokens) {
+  const summary = { role: "user", content: buildSummary(details) };
+  const fixedTokens = estimateTokens([messages[0], summary]) + details.toolTokens;
+  const start = findRecentStart(messages, targetTokens - fixedTokens);
+  return [messages[0], summary, ...messages.slice(start)];
+}
+
+function buildSummary({ originalTask, currentRequest, touchedFiles }) {
+  const sections = [
     "The conversation was compacted to save context.",
     `Original task:\n${originalTask}`,
     `Files touched so far: ${[...touchedFiles].join(", ") || "none"}`,
   ];
-  if (!recent.some((message) => message.content === currentRequest)) lines.push(`Current request:\n${currentRequest}`);
-  lines.push("The most recent messages follow.");
-  return [messages[0], { role: "user", content: lines.join("\n\n") }, ...recent];
+  if (currentRequest !== originalTask) sections.push(`Latest request:\n${currentRequest}`);
+  sections.push("The most recent messages follow.");
+  return sections.join("\n\n");
 }
 
-function recentStartIndex(messages, tokenBudget) {
+function findRecentStart(messages, tokenBudget) {
   let start = messages.length - 1;
-  let used = estimateTokens(messages[start]);
-  while (start > 2 && used + estimateTokens(messages[start - 1]) <= tokenBudget) {
+  let usedTokens = estimateTokens(messages[start]);
+  while (start > 2 && usedTokens + estimateTokens(messages[start - 1]) <= tokenBudget) {
     start--;
-    used += estimateTokens(messages[start]);
+    usedTokens += estimateTokens(messages[start]);
   }
   while (start > 1 && messages[start].role === "tool") start--;
   return start;

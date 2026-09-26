@@ -1,0 +1,70 @@
+import { spawn, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { PROJECT_ROOT } from "./config.js";
+import { writeDimLine } from "./ui.js";
+
+const CHECK_TIMEOUT_MS = 180_000;
+const FAILURE_TAIL_LINES = 60;
+const NPM_PLACEHOLDER_TEST = "no test specified";
+const VENV_PYTHON = ".venv/bin/python";
+
+export function findTestCommand() {
+  if (hasNpmTestScript()) return "npm test --silent";
+  if (isPythonProject()) return findPythonTestCommand();
+  if (exists("Cargo.toml")) return "cargo test";
+  if (exists("go.mod")) return "go test ./...";
+  return null;
+}
+
+function exists(relativePath) {
+  return fs.existsSync(path.join(PROJECT_ROOT, relativePath));
+}
+
+function hasNpmTestScript() {
+  if (!exists("package.json")) return false;
+  try {
+    const packageJson = JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, "package.json"), "utf8"));
+    const testScript = packageJson.scripts?.test ?? "";
+    return testScript !== "" && !testScript.includes(NPM_PLACEHOLDER_TEST);
+  } catch {
+    return false;
+  }
+}
+
+function isPythonProject() {
+  return exists("pytest.ini") || exists("pyproject.toml") || exists("tests");
+}
+
+function findPythonTestCommand() {
+  const python = exists(VENV_PYTHON) ? VENV_PYTHON : "python3";
+  const pytestCheck = spawnSync(python, ["-c", "import pytest"], { cwd: PROJECT_ROOT });
+  if (pytestCheck.status === 0) return `${python} -m pytest -q`;
+  return `${python} -m unittest discover`;
+}
+
+export async function runDoneCheck(command, signal) {
+  const result = await runTestCommand(command, signal);
+  signal.throwIfAborted();
+  writeDimLine(`check: ${command} ${result.passed ? "✓" : "✗"}`);
+  const failureMessage = `I ran \`${command}\` after your changes and it failed. Last lines of output:\n${result.tail}\n\nPlease fix the problem.`;
+  return { passed: result.passed, failureMessage };
+}
+
+function runTestCommand(command, signal) {
+  return new Promise((resolve) => {
+    const child = spawn("bash", ["-c", command], { cwd: PROJECT_ROOT, signal, timeout: CHECK_TIMEOUT_MS, killSignal: "SIGKILL" });
+    let output = "";
+    child.stdout.on("data", (data) => (output += data));
+    child.stderr.on("data", (data) => (output += data));
+    child.on("error", (error) => (output += `\n${error.message}`));
+    child.on("close", (exitCode) => {
+      if (exitCode === null) output += `\n[the test command was stopped (timeout ${CHECK_TIMEOUT_MS / 1000}s or interrupt)]`;
+      resolve({ passed: exitCode === 0, tail: lastLines(output, FAILURE_TAIL_LINES) });
+    });
+  });
+}
+
+function lastLines(text, count) {
+  return text.trimEnd().split("\n").slice(-count).join("\n");
+}

@@ -1,10 +1,59 @@
-export async function streamChat(config, messages, tools, onText) {
+import { setTimeout as sleep } from "node:timers/promises";
+import { parseStream } from "./stream.js";
+
+const MAX_RETRIES = 3;
+const MAX_STALL_RETRIES = 1;
+const STALL_TIMEOUT_MS = 60_000;
+const BASE_BACKOFF_MS = 1000;
+const MAX_RETRY_AFTER_MS = 60_000;
+
+export async function requestCompletion(request) {
+  const attempts = { retries: 0, stallRetries: 0 };
+  while (true) {
+    try {
+      return await attemptCompletion(request);
+    } catch (error) {
+      if (request.signal.aborted || !takeRetry(error, attempts)) throw error;
+      const delayMs = retryDelayMs(error, attempts.retries);
+      request.onRetry(`${error.message}; retrying in ${(delayMs / 1000).toFixed(1)}s`);
+      await sleep(delayMs, undefined, { signal: request.signal });
+    }
+  }
+}
+
+function takeRetry(error, attempts) {
+  if (error.stalled) {
+    attempts.stallRetries++;
+    return attempts.stallRetries <= MAX_STALL_RETRIES;
+  }
+  if (!error.retryable) return false;
+  attempts.retries++;
+  return attempts.retries <= MAX_RETRIES;
+}
+
+function retryDelayMs(error, retries) {
+  if (error.stalled) return 0;
+  if (error.retryAfterMs !== undefined) return Math.min(error.retryAfterMs, MAX_RETRY_AFTER_MS);
+  return BASE_BACKOFF_MS * 2 ** (retries - 1);
+}
+
+async function attemptCompletion({ config, messages, tools, handlers, signal }) {
+  const watchdog = new StallWatchdog(STALL_TIMEOUT_MS);
+  try {
+    const requestSignal = AbortSignal.any([signal, watchdog.signal]);
+    const response = await sendRequest(config, messages, tools, requestSignal);
+    return await parseStream(response.body, { ...handlers, onData: () => watchdog.reset() });
+  } catch (error) {
+    throw describeFailure(error, watchdog.stalled, signal);
+  } finally {
+    watchdog.stop();
+  }
+}
+
+async function sendRequest(config, messages, tools, signal) {
   const response = await fetch(`${config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${config.apiKey}`,
-    },
+    headers: { "content-type": "application/json", authorization: `Bearer ${config.apiKey}` },
     body: JSON.stringify({
       model: config.model,
       messages,
@@ -14,49 +63,56 @@ export async function streamChat(config, messages, tools, onText) {
       stream: true,
       stream_options: { include_usage: true },
     }),
+    signal,
   });
-  if (!response.ok) {
-    throw new Error(`API error ${response.status}: ${(await response.text()).slice(0, 500)}`);
-  }
-  return readStream(response.body, onText);
+  if (response.ok) return response;
+  throw await createHttpError(response);
 }
 
-async function readStream(body, onText) {
-  const reply = { content: "", toolCalls: [], usage: null };
-  for await (const data of sseEvents(body)) {
-    const chunk = JSON.parse(data);
-    if (chunk.error) throw new Error(`API error: ${JSON.stringify(chunk.error).slice(0, 500)}`);
-    if (chunk.usage) reply.usage = chunk.usage;
-    const delta = chunk.choices?.[0]?.delta;
-    if (delta) applyDelta(reply, delta, onText);
-  }
-  return reply;
+async function createHttpError(response) {
+  const body = await response.text().catch(() => "");
+  const error = new Error(`API error ${response.status}: ${body.slice(0, 300)}`);
+  error.retryable = response.status === 429 || response.status >= 500;
+  const retryAfterMs = parseRetryAfter(response.headers.get("retry-after"));
+  if (retryAfterMs !== null) error.retryAfterMs = retryAfterMs;
+  return error;
 }
 
-async function* sseEvents(body) {
-  const decoder = new TextDecoder();
-  let buffer = "";
-  for await (const bytes of body) {
-    buffer += decoder.decode(bytes, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop();
-    for (const line of lines) {
-      const data = line.startsWith("data:") ? line.slice(5).trim() : "";
-      if (data === "[DONE]") return;
-      if (data) yield data;
-    }
-  }
+function parseRetryAfter(header) {
+  if (!header) return null;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const date = Date.parse(header);
+  if (Number.isNaN(date)) return null;
+  return Math.max(0, date - Date.now());
 }
 
-function applyDelta(reply, delta, onText) {
-  if (delta.content) {
-    reply.content += delta.content;
-    onText(delta.content);
+function describeFailure(error, stalled, userSignal) {
+  if (userSignal.aborted) return error;
+  if (stalled) return Object.assign(new Error(`the model stream was silent for ${STALL_TIMEOUT_MS / 1000}s`), { stalled: true });
+  if (error.retryable !== undefined) return error;
+  const cause = error.cause?.message ? ` (${error.cause.message})` : "";
+  return Object.assign(new Error(`network error: ${error.message}${cause}`), { retryable: true });
+}
+
+class StallWatchdog {
+  constructor(timeoutMs) {
+    this.timeoutMs = timeoutMs;
+    this.controller = new AbortController();
+    this.signal = this.controller.signal;
+    this.stalled = false;
+    this.reset();
   }
-  for (const part of delta.tool_calls ?? []) {
-    const call = (reply.toolCalls[part.index ?? 0] ??= { id: "", name: "", arguments: "" });
-    call.id ||= part.id ?? "";
-    call.name += part.function?.name ?? "";
-    call.arguments += part.function?.arguments ?? "";
+
+  reset() {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      this.stalled = true;
+      this.controller.abort();
+    }, this.timeoutMs);
+  }
+
+  stop() {
+    clearTimeout(this.timer);
   }
 }

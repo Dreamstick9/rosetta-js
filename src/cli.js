@@ -1,103 +1,113 @@
 #!/usr/bin/env node
-import readline from "node:readline";
 import { loadConfig } from "./config.js";
 import { Agent } from "./agent.js";
+import { Trace } from "./trace.js";
+import { stopShell } from "./tools/shell.js";
+import { askApproval, readPipedInput, readUserMessage, startTerminalInput, stopTerminalInput, watchForInterrupt } from "./input.js";
+import { writeCostSummary, writeDimLine, writeError, writeFooter, writeLine } from "./ui.js";
 
 const HELP = `Commands:
-  /help   show this help
-  /new    clear the conversation
-  /exit   quit`;
+  /help         show this help
+  /new          clear the conversation
+  /cost         show the session cost and token totals
+  /check off    stop running the tests after changes (/check on turns it back on)
+  /exit         quit
+Esc or Ctrl-C stops the current turn. Ctrl-C at the prompt quits.`;
 
-const dim = (text) => (process.stdout.isTTY ? `\x1b[2m${text}\x1b[0m` : text);
-
-function createTerminalUi() {
-  let atLineStart = true;
-  const write = (text) => {
-    process.stdout.write(text);
-    if (text) atLineStart = text.endsWith("\n");
-  };
-  const writeLine = (text) => write(`${atLineStart ? "" : "\n"}${text}\n`);
-  return {
-    write,
-    writeLine,
-    onText: write,
-    onToolCall: (name, target, error) => writeLine(dim(formatToolLine(name, target, error))),
-    onCompact: (before, after, method) => writeLine(dim(`  [context compacted: ~${before} → ~${after} tokens, ${method}]`)),
-    onEmptyReply: () => writeLine(dim("  [model returned an empty reply]")),
-  };
+async function main() {
+  const config = loadConfig();
+  if (!config.apiKey) exitWithError("AI_API_KEY is not set. Export it in your environment first.");
+  process.on("exit", cleanUp);
+  const trace = new Trace(config.pricing);
+  const prompt = readPromptArgument(process.argv.slice(2));
+  if (prompt !== null) return runHeadless(config, trace, prompt);
+  if (!process.stdin.isTTY) return runHeadless(config, trace, await readPipedInput());
+  return runInteractive(config, trace);
 }
 
-function formatToolLine(name, target, error) {
-  const parts = [error ? "  ✗" : "  →", name, target, error && `— ${firstLine(error)}`];
-  return parts.filter(Boolean).join(" ");
+function readPromptArgument(args) {
+  const index = args.findIndex((arg) => arg === "-p" || arg === "--prompt");
+  if (index === -1) return null;
+  return args[index + 1] ?? "";
 }
 
-function firstLine(text) {
-  return text.split("\n")[0].slice(0, 120);
+async function runHeadless(config, trace, task) {
+  if (!task.trim()) exitWithError('Usage: node src/cli.js -p "task"   (or pipe the task on stdin)');
+  const agent = new Agent({ config, trace, approve: async () => false });
+  const succeeded = await runTask(agent, task, new AbortController().signal);
+  process.exit(succeeded ? 0 : 1);
 }
 
-function formatFooter(stats, seconds) {
-  const mark = stats.estimated ? "~" : "";
-  const parts = [`in ${mark}${stats.inputTokens}`];
-  if (stats.cachedTokens) parts.push(`cached ${stats.cachedTokens}`);
-  parts.push(`out ${mark}${stats.outputTokens}`, `${seconds.toFixed(1)}s`);
-  return `[${parts.join(" · ")}]`;
+async function runInteractive(config, trace) {
+  const agent = new Agent({ config, trace, approve: createInteractiveApprover() });
+  startTerminalInput();
+  writeDimLine(`Model: ${config.model}. Type /help for commands.`);
+  while (true) {
+    const input = await readUserMessage();
+    if (input === null || input.trim() === "/exit") break;
+    const text = input.trim();
+    if (isCommand(text)) handleCommand(agent, trace, text);
+    else if (text) await runInteractiveTask(agent, input);
+  }
+  process.exit(0);
 }
 
-async function runTurn(agent, ui, text) {
+function isCommand(text) {
+  return text.startsWith("/") && !text.includes("\n");
+}
+
+async function runInteractiveTask(agent, text) {
+  const controller = new AbortController();
+  const stopWatching = watchForInterrupt(() => controller.abort());
+  await runTask(agent, text, controller.signal);
+  stopWatching();
+}
+
+async function runTask(agent, text, signal) {
   const startedAt = Date.now();
   try {
-    const stats = await agent.send(text, ui);
-    ui.writeLine(dim(formatFooter(stats, (Date.now() - startedAt) / 1000)));
+    const stats = await agent.runTask(text, signal);
+    writeFooter({ ...stats, seconds: (Date.now() - startedAt) / 1000 });
     return true;
   } catch (error) {
-    ui.writeLine(`Error: ${error.message}${error.cause ? ` (${error.cause.message})` : ""}`);
+    if (signal.aborted) writeDimLine("[interrupted]");
+    else writeError(`Error: ${error.message}`);
     return false;
   }
 }
 
-function handleCommand(agent, ui, input) {
-  if (input === "/help") ui.writeLine(HELP);
-  else if (input === "/new") {
+function createInteractiveApprover() {
+  const alwaysAllowed = new Set();
+  return async function approve(command, reason, signal) {
+    if (alwaysAllowed.has(reason)) return true;
+    const answer = await askApproval(`  ! ${reason}: ${command}`, signal);
+    if (answer === "always") alwaysAllowed.add(reason);
+    return answer !== "no";
+  };
+}
+
+function handleCommand(agent, trace, command) {
+  if (command === "/help") return writeLine(HELP);
+  if (command === "/cost") return writeCostSummary(trace.totals, trace.file);
+  if (command === "/new") {
     agent.reset();
-    ui.writeLine(dim("Conversation cleared."));
-  } else ui.writeLine(`Unknown command ${input}.\n${HELP}`);
+    return writeDimLine("Conversation cleared.");
+  }
+  if (command === "/check on" || command === "/check off") {
+    agent.doneCheckEnabled = command === "/check on";
+    return writeDimLine(`Test check after changes is ${agent.doneCheckEnabled ? "on" : "off"}.`);
+  }
+  writeLine(`Unknown command ${command}.\n${HELP}`);
 }
 
-async function runInteractive(agent, ui) {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout, prompt: "\n> " });
-  ui.writeLine(dim(`Model: ${agent.config.model}. Type /help for commands.`));
-  rl.prompt();
-  for await (const line of rl) {
-    const input = line.trim();
-    if (input === "/exit") break;
-    if (input.startsWith("/")) handleCommand(agent, ui, input);
-    else if (input) await runTurn(agent, ui, input);
-    rl.prompt();
-  }
-  rl.close();
+function cleanUp() {
+  stopShell();
+  stopTerminalInput();
 }
 
-function parsePromptArgument(argv) {
-  const index = argv.findIndex((arg) => arg === "-p" || arg === "--prompt");
-  return index === -1 ? null : argv[index + 1] ?? "";
-}
-
-async function main() {
-  const config = loadConfig();
-  if (!config.apiKey) {
-    console.error("AI_API_KEY is not set. Export it in your environment first.");
-    process.exit(1);
-  }
-  const agent = new Agent(config);
-  const ui = createTerminalUi();
-  const prompt = parsePromptArgument(process.argv.slice(2));
-  if (prompt === null) return runInteractive(agent, ui);
-  if (!prompt) {
-    console.error('Usage: node src/cli.js -p "task"');
-    process.exit(1);
-  }
-  process.exitCode = (await runTurn(agent, ui, prompt)) ? 0 : 1;
+function exitWithError(message) {
+  writeError(message);
+  process.exit(1);
 }
 
 main();
