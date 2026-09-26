@@ -1,0 +1,11 @@
+{
+  "name": "rosetta-js",
+  "version": "0.1.0",
+  "description": "A very basic coding-agent harness for OpenAI-compatible APIs.",
+  "type": "module",
+  "bin": { "rosetta": "src/cli.js" },
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/cli.js"
+  }
+}

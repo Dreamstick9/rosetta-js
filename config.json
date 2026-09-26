@@ -1,0 +1,7 @@
+{
+  "baseUrl": "https://ai.hackclub.com/proxy/v1",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "maxContextTokens": 64000,
+  "maxOutputTokens": 8192,
+  "temperature": 0.2
+}
