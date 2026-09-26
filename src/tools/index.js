@@ -1,10 +1,11 @@
 import { FILE_TOOLS } from "./files.js";
 import { searchTool } from "./search.js";
 import { bashTool, getShellCwd } from "./shell.js";
+import { skillTool } from "./skill.js";
 import { checkToolCall, describeBlock } from "../policy.js";
 
-const TOOLS = [...FILE_TOOLS, searchTool, bashTool];
-const READ_ONLY_TOOL_NAMES = new Set(["list_files", "read_file", "search"]);
+const TOOLS = [...FILE_TOOLS, searchTool, bashTool, skillTool];
+const READ_ONLY_TOOL_NAMES = new Set(["list_files", "read_file", "search", "skill"]);
 const SUMMARY_LENGTH = 60;
 const INTERRUPTED_RESULT = "Interrupted by the user.";
 
@@ -70,7 +71,7 @@ function checkArguments(definition, args) {
 }
 
 export function summarizeToolArguments(args) {
-  const value = args?.path ?? args?.pattern ?? args?.command ?? "";
+  const value = args?.path ?? args?.pattern ?? args?.command ?? args?.name ?? "";
   const text = String(value).replaceAll("\n", " ").trim();
   if (text.length <= SUMMARY_LENGTH) return text;
   return `${text.slice(0, SUMMARY_LENGTH)}…`;

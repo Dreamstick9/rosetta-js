@@ -5,17 +5,9 @@ import { compactMessages, estimateTokens, isPrefixStable, needsCompaction, trunc
 import { findTestCommand, runDoneCheck, snapshotsDiffer, takeProjectSnapshot } from "./checks.js";
 import { readTokenCounts } from "./trace.js";
 import { CONFIG } from "./config.js";
+import { buildSessionPrompt, describeLoadedContext } from "./prompt.js";
 import { createReplyPrinter, writeDimLine, writeError, writeToolLine } from "./ui.js";
 
-const SYSTEM_PROMPT = `You are a coding agent working in the user's project directory.
-Use the tools to inspect, change and test the project. Paths are relative to the project root, or absolute.
-Some calls are blocked by a safety policy (writing outside the project and /tmp, git push, credential files, secret variables). When a call is blocked, choose another way.
-Use search to find code. Read files before editing them, and prefer edit_file for small changes.
-The bash tool runs in one persistent shell, so cd and environment changes carry over between calls.
-When the project has tests, run them after making changes.
-Keep replies short. When you are done, say what you changed.`;
-
-const SYSTEM_MESSAGE = { role: "system", content: SYSTEM_PROMPT };
 const TOOL_TOKENS = estimateTokens(TOOL_DEFINITIONS);
 const MAX_NUDGES = CONFIG.agent.maxEmptyReplyNudges;
 const MAX_CHECK_ROUNDS = CONFIG.agent.maxCheckRounds;
@@ -28,17 +20,19 @@ export class Agent {
     this.config = config;
     this.trace = trace;
     this.doneCheckEnabled = true;
+    this.systemMessage = null;
     this.reset();
   }
 
   reset() {
-    this.messages = [SYSTEM_MESSAGE];
+    this.messages = this.systemMessage ? [this.systemMessage] : [];
     this.originalTask = null;
     this.touchedFiles = new Set();
     this.usageMark = null;
   }
 
   async runTask(userText, signal) {
+    this.loadSystemMessage();
     this.originalTask ??= userText;
     this.currentRequest = userText;
     this.messages.push({ role: "user", content: userText });
@@ -58,6 +52,15 @@ export class Agent {
     }
     writeError(`Stopped: this task reached maxTurns (${this.config.maxTurns} model calls).`);
     return { ...stats, outcome: "max_turns" };
+  }
+
+  loadSystemMessage() {
+    if (this.systemMessage) return;
+    const prompt = buildSessionPrompt();
+    this.systemMessage = prompt.message;
+    this.messages.unshift(prompt.message);
+    this.trace.recordPromptLoad(prompt.loaded);
+    writeDimLine(describeLoadedContext(prompt.loaded));
   }
 
   stopForBudget(stats) {

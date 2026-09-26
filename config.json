@@ -42,5 +42,11 @@
     "maxSearchLineLength": 200,
     "listDepth": 2,
     "readLineLimit": 2000
+  },
+  "skills": {
+    "maxInstructionTokens": 4000,
+    "maxCatalogSkills": 40,
+    "maxDescriptionChars": 150,
+    "maxSkillFiles": 50
   }
 }

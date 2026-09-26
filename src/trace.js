@@ -31,6 +31,10 @@ export class Trace {
     this.write({ type: "tool", name, args, ms, bytes, status, reason });
   }
 
+  recordPromptLoad({ instructionsFile, instructionsTruncated, skills, catalogSkills }) {
+    this.write({ type: "prompt", instructionsFile, instructionsTruncated, skills, catalogSkills });
+  }
+
   recordCompaction({ before, after }) {
     this.write({ type: "compaction", before, after });
   }
