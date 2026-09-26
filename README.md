@@ -52,7 +52,8 @@ It never works on the rosetta-js folder itself: `REPO=.` is refused.
 | `make test`  | syntax-checks every file; with `AI_API_KEY` set it also does a real run that fixes a small buggy fixture in `/tmp/rjs-smoke-*` and checks the fixture's test passes afterwards. Without a key it prints a skip message. |
 | `make clean` | removes `runs/`, `.tools/` and the `/tmp/rjs-*` scratch folders. |
 
-`make run` and `make test` use `.tools/node` when setup installed it, and load
+`make run` and `make test` put `.tools/node/bin` first on `PATH` (so the agent's
+shell and test runs also find that `node` and `npm`), and load
 `.env` when one exists (see `.env.example`). Exporting `AI_API_KEY` is the
 primary path; `.env` is only a local convenience and is gitignored.
 
