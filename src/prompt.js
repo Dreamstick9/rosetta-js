@@ -4,6 +4,7 @@ import { readProjectInstructions } from "./skills/instructions.js";
 import { discoverSkills, listSkillLocations } from "./skills/discovery.js";
 import { formatCatalog, selectCatalogSkills } from "./skills/catalog.js";
 import { setAvailableSkills } from "./tools/skill.js";
+import { WEB_PROMPT_LINE } from "./tools/web.js";
 
 const BASE_PROMPT = `You are a coding agent working in the user's project directory.
 Use the tools to inspect, change and test the project. Paths are relative to the project root, or absolute.
@@ -11,7 +12,7 @@ Some calls are blocked by a safety policy (writing outside the project and /tmp,
 Use search to find code. Read files before editing them, and prefer edit_file for small changes.
 The bash tool runs in one persistent shell, so cd and environment changes carry over between calls.
 When the project has tests, run them after making changes.
-Keep replies short. When you are done, say what you changed.`;
+${WEB_PROMPT_LINE}Keep replies short. When you are done, say what you changed.`;
 
 export function buildSessionPrompt() {
   const settings = CONFIG.skills;

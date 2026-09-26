@@ -98,15 +98,15 @@ export class Agent {
   }
 
   async runTools(calls, signal, task) {
-    const results = await runToolCalls(calls, { signal });
+    const results = await runToolCalls(calls, { signal, trace: this.trace, taskText: this.originalTask });
     for (const result of results) this.recordToolResult(result, task);
     signal.throwIfAborted();
   }
 
-  recordToolResult({ call, output, status, ms }, task) {
+  recordToolResult({ call, output, line, status, ms }, task) {
     const content = truncateOutput(output);
     const summary = summarizeToolArguments(call.args);
-    writeToolLine({ name: call.name, summary, status, output });
+    writeToolLine({ name: call.name, summary, status, output, line });
     const reason = status === "blocked" ? output : undefined;
     this.trace.recordToolCall({ name: call.name, args: summary, ms, bytes: Buffer.byteLength(content), status, reason });
     this.messages.push({ role: "tool", tool_call_id: call.id, content });

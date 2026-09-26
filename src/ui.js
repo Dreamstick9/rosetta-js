@@ -43,7 +43,8 @@ export function createReplyPrinter() {
   };
 }
 
-export function writeToolLine({ name, summary, status, output }) {
+export function writeToolLine({ name, summary, status, output, line }) {
+  if (line) return writeDimLine(`  ${line}`);
   const parts = [`  ${TOOL_MARKS[status]} ${name}`];
   if (summary) parts.push(summary);
   if (status !== "ok") parts.push(`— ${firstLine(output)}`);
