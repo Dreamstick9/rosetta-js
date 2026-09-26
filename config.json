@@ -7,6 +7,9 @@
   "topP": 1,
   "seed": 7,
   "maxTurns": 60,
+  "maxSessionUsd": 1,
+  "policy": "standard",
+  "exitAfterTask": true,
   "pricing": {
     "inputPerMTok": 0.035,
     "cachedInputPerMTok": 0.001,

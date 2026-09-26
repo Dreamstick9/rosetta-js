@@ -1,6 +1,7 @@
 import { FILE_TOOLS } from "./files.js";
 import { searchTool } from "./search.js";
-import { bashTool } from "./shell.js";
+import { bashTool, getShellCwd } from "./shell.js";
+import { checkToolCall, describeBlock } from "../policy.js";
 
 const TOOLS = [...FILE_TOOLS, searchTool, bashTool];
 const READ_ONLY_TOOL_NAMES = new Set(["list_files", "read_file", "search"]);
@@ -40,21 +41,22 @@ async function runToolCall(call, context) {
   const startedAt = Date.now();
   try {
     if (call.argumentsError) throw new Error(call.argumentsError);
-    const output = await runTool(call.name, call.args, context);
+    const tool = findTool(call.name);
+    checkArguments(tool.definition.function, call.args);
+    const blockedReason = checkToolCall(call.name, call.args, getShellCwd());
+    if (blockedReason) return { call, output: describeBlock(blockedReason), status: "blocked", ms: 0 };
+    const output = await tool.run(call.args, context);
     return { call, output, status: "ok", ms: Date.now() - startedAt };
   } catch (error) {
     return { call, output: `Error: ${error.message}`, status: "error", ms: Date.now() - startedAt };
   }
 }
 
-async function runTool(name, args, context) {
+function findTool(name) {
   const tool = TOOLS.find((candidate) => candidate.definition.function.name === name);
-  if (!tool) {
-    const names = TOOLS.map((candidate) => candidate.definition.function.name);
-    throw new Error(`unknown tool '${name}'. Available tools: ${names.join(", ")}`);
-  }
-  checkArguments(tool.definition.function, args);
-  return tool.run(args, context);
+  if (tool) return tool;
+  const names = TOOLS.map((candidate) => candidate.definition.function.name);
+  throw new Error(`unknown tool '${name}'. Available tools: ${names.join(", ")}`);
 }
 
 function checkArguments(definition, args) {

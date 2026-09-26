@@ -3,10 +3,11 @@ import fs from "node:fs";
 import { CONFIG } from "./config.js";
 import { Agent } from "./agent.js";
 import { Trace } from "./trace.js";
+import { countChangedFiles, takeProjectSnapshot } from "./checks.js";
 import { stopShell } from "./tools/shell.js";
 import { readPipedInput, readUserMessage, startTerminalInput, stopTerminalInput, watchForInterrupt } from "./input.js";
 import { writeCostSummary, writeDimLine, writeError, writeFooter, writeLine } from "./ui.js";
-import { chooseWorkingFolder, findPresetFolder, openPresetFolder } from "./workdir.js";
+import { openWorkingFolder } from "./workdir.js";
 
 const HELP = `Commands:
   /help         show this help
@@ -15,43 +16,30 @@ const HELP = `Commands:
   /check off    stop running the tests after changes (/check on turns it back on)
   /exit         quit
 Esc or Ctrl-C stops the current turn. Ctrl-C at the prompt quits.`;
+const EXIT_CODES = { done: 0, max_turns: 3, budget: 3 };
+const SESSION_STARTED_AT = Date.now();
 
-let workingFolderReady = false;
+let sessionSnapshot = null;
+let lastStatus = "no_task";
 
 async function main() {
   const config = CONFIG;
   if (!config.apiKey) exitWithError("AI_API_KEY is not set. Export it in your environment first.");
   process.on("exit", cleanUp);
   writeDimLine(describeModel(config));
-  openPresetFolderOrExit();
+  const problem = openWorkingFolder();
+  if (problem) exitWithError(problem);
   const trace = new Trace(config);
-  const prompt = readPromptArgument(process.argv.slice(2)) ?? readIssueVariable();
+  const args = process.argv.slice(2);
+  const prompt = readPromptArgument(args) ?? readIssueVariable();
   if (prompt !== null) return runHeadless(config, trace, prompt);
   if (!process.stdin.isTTY) return runHeadless(config, trace, await readPipedInput());
-  return runInteractive(config, trace);
+  return runInteractive(config, trace, args.includes("--chat") || !config.exitAfterTask);
 }
 
 function describeModel(config) {
   const overrides = config.overrides.length > 0 ? ` (overridden by ${config.overrides.join(", ")})` : "";
-  return `Model: ${config.model} at ${config.baseUrl}${overrides}`;
-}
-
-function openPresetFolderOrExit() {
-  const preset = findPresetFolder();
-  if (!preset) return;
-  const problem = openPresetFolder(preset);
-  if (problem) exitWithError(problem);
-  workingFolderReady = true;
-}
-
-async function ensureWorkingFolder(canAsk) {
-  if (workingFolderReady) return true;
-  try {
-    workingFolderReady = await chooseWorkingFolder({ canAsk });
-  } catch (error) {
-    writeError(`Could not open the working folder: ${error.message}`);
-  }
-  return workingFolderReady;
+  return `Model: ${config.model} at ${config.baseUrl}${overrides} · policy ${config.policy}`;
 }
 
 function readIssueVariable() {
@@ -69,25 +57,28 @@ function readPromptArgument(args) {
 
 async function runHeadless(config, trace, task) {
   if (!task.trim()) exitWithError('Usage: node src/cli.js -p "task"   (or pipe the task on stdin, or set ISSUE)');
-  if (!(await ensureWorkingFolder(false))) process.exit(1);
   const agent = new Agent({ config, trace });
-  const succeeded = await runTask(agent, trace, task, new AbortController().signal);
-  process.exit(succeeded ? 0 : 1);
+  await runTask(agent, trace, task, new AbortController().signal);
+  finishSession(trace);
 }
 
-async function runInteractive(config, trace) {
+async function runInteractive(config, trace, keepChatting) {
   const agent = new Agent({ config, trace });
   startTerminalInput();
-  if (!workingFolderReady) writeDimLine("Working folder: not chosen yet; I will ask after your first message.");
-  writeDimLine("Type /help for commands.");
+  writeDimLine(keepChatting ? "Type /help for commands." : "Type or paste the task and press Enter. /help lists commands.");
   while (true) {
     const input = await readUserMessage();
     if (input === null || input.trim() === "/exit") break;
     const text = input.trim();
-    if (isCommand(text)) handleCommand(agent, trace, text);
-    else if (text) await runInteractiveTask(agent, trace, input);
+    if (isCommand(text)) {
+      handleCommand(agent, trace, text);
+      continue;
+    }
+    if (!text) continue;
+    await runInteractiveTask(agent, trace, input);
+    if (!keepChatting) break;
   }
-  process.exit(0);
+  finishSession(trace);
 }
 
 function isCommand(text) {
@@ -95,7 +86,6 @@ function isCommand(text) {
 }
 
 async function runInteractiveTask(agent, trace, text) {
-  if (!(await ensureWorkingFolder(true))) return;
   const controller = new AbortController();
   const stopWatching = watchForInterrupt(() => controller.abort());
   await runTask(agent, trace, text, controller.signal);
@@ -104,18 +94,30 @@ async function runInteractiveTask(agent, trace, text) {
 
 async function runTask(agent, trace, text, signal) {
   const startedAt = Date.now();
+  sessionSnapshot ??= takeProjectSnapshot();
   try {
     const stats = await agent.runTask(text, signal);
     const result = { ...stats, seconds: (Date.now() - startedAt) / 1000 };
     writeFooter(result);
     trace.recordTaskEnd(result);
     if (result.outcome !== "done") writeError(`Outcome: ${result.outcome}`);
-    return result.outcome === "done";
+    lastStatus = result.outcome;
   } catch (error) {
     if (signal.aborted) writeDimLine("[interrupted]");
     else writeError(`Error: ${error.message}`);
-    return false;
+    lastStatus = signal.aborted ? "interrupted" : "error";
   }
+}
+
+function finishSession(trace) {
+  const summary = {
+    status: lastStatus,
+    cost: Number(trace.totals.cost.toFixed(6)),
+    seconds: Number(((Date.now() - SESSION_STARTED_AT) / 1000).toFixed(1)),
+    filesChanged: countChangedFiles(sessionSnapshot, sessionSnapshot && takeProjectSnapshot()),
+  };
+  process.stderr.write(`${JSON.stringify(summary)}\n`);
+  process.exit(EXIT_CODES[lastStatus] ?? (lastStatus === "no_task" ? 0 : 1));
 }
 
 function handleCommand(agent, trace, command) {

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { CONFIG, PROJECT_ROOT } from "../config.js";
+import { buildChildEnvironment } from "../environment.js";
 
 const COMMAND_TIMEOUT_MS = CONFIG.timeouts.commandSeconds * 1000;
 const KILL_GRACE_MS = 2000;
@@ -18,7 +19,7 @@ class ShellSession {
 
   start() {
     this.cwd ??= PROJECT_ROOT;
-    this.child = spawn("bash", ["--noprofile", "--norc"], { cwd: this.cwd, detached: true });
+    this.child = spawn("bash", ["--noprofile", "--norc"], { cwd: this.cwd, detached: true, env: buildChildEnvironment() });
     this.child.stdout.setEncoding("utf8");
     this.child.stderr.setEncoding("utf8");
     this.child.stdout.on("data", (text) => this.receive(text));
@@ -121,6 +122,10 @@ function waitForAbort(signal, timeoutMs) {
 }
 
 const session = new ShellSession();
+
+export function getShellCwd() {
+  return session.cwd ?? PROJECT_ROOT;
+}
 
 export function stopShell() {
   session.signalGroup("SIGKILL");

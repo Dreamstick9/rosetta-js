@@ -2,6 +2,7 @@ import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { CONFIG, PROJECT_ROOT } from "./config.js";
+import { buildChildEnvironment } from "./environment.js";
 import { IGNORED_DIRECTORIES } from "./tools/files.js";
 import { writeDimLine } from "./ui.js";
 
@@ -54,6 +55,18 @@ export function snapshotsDiffer(before, after) {
   return false;
 }
 
+export function countChangedFiles(before, after) {
+  if (!before || !after) return null;
+  let count = 0;
+  for (const [file, description] of after) {
+    if (before.get(file) !== description) count++;
+  }
+  for (const file of before.keys()) {
+    if (!after.has(file)) count++;
+  }
+  return count;
+}
+
 export function findTestCommand() {
   if (hasNpmTestScript()) return "npm test --silent";
   if (isPythonProject()) return findPythonTestCommand();
@@ -98,7 +111,7 @@ export async function runDoneCheck(command, signal) {
 
 function runTestCommand(command, signal) {
   return new Promise((resolve) => {
-    const child = spawn("bash", ["-c", command], { cwd: PROJECT_ROOT, signal, timeout: CHECK_TIMEOUT_MS, killSignal: "SIGKILL" });
+    const child = spawn("bash", ["-c", command], { cwd: PROJECT_ROOT, env: buildChildEnvironment(), signal, timeout: CHECK_TIMEOUT_MS, killSignal: "SIGKILL" });
     let output = "";
     child.stdout.on("data", (data) => (output += data));
     child.stderr.on("data", (data) => (output += data));

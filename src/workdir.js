@@ -2,36 +2,30 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { HARNESS_ROOT, setProjectRoot } from "./config.js";
-import { readAnswer } from "./input.js";
-import { writeDimLine, writeError } from "./ui.js";
+import { writeDimLine } from "./ui.js";
 
 const DEFAULT_WORK_FOLDER = "/tmp/rjs-work";
-const FOLDER_QUESTION = "Which folder should I work on?";
+const FOLDER_VARIABLES = ["REPO", "REPO_PATH", "TARGET_REPO"];
 
-export function findPresetFolder() {
-  if (process.env.REPO) return { folder: expandHome(process.env.REPO), source: "REPO" };
-  if (process.env.REPO_PATH) return { folder: expandHome(process.env.REPO_PATH), source: "REPO_PATH" };
+export function openWorkingFolder() {
+  const choice = findWorkingFolder();
+  const problem = describeFolderProblem(choice.folder);
+  if (problem) return `${choice.source}: ${problem}`;
+  enterWorkingFolder(choice.folder, choice.source);
+  return null;
+}
+
+export function enterWorkingFolder(folder, source) {
+  setProjectRoot(folder);
+  writeDimLine(`Working folder: ${process.cwd()} (${source})`);
+}
+
+function findWorkingFolder() {
+  const name = FOLDER_VARIABLES.find((candidate) => process.env[candidate]);
+  if (name) return { folder: expandHome(process.env[name]), source: name };
   if (!isInsideHarness(process.cwd())) return { folder: process.cwd(), source: "current folder" };
-  return null;
-}
-
-export function openPresetFolder({ folder, source }) {
-  const problem = describeFolderProblem(folder);
-  if (problem) return `${source}: ${problem}`;
-  enterFolder(folder, source);
-  return null;
-}
-
-export async function chooseWorkingFolder({ canAsk }) {
-  if (!canAsk) return enterFolder(createFolder(DEFAULT_WORK_FOLDER), "default");
-  const answer = await readAnswer(`${FOLDER_QUESTION} [${DEFAULT_WORK_FOLDER}]`);
-  if (answer === null) return false;
-  const folder = expandHome(answer.trim() || DEFAULT_WORK_FOLDER);
-  if (isInsideHarness(folder)) {
-    writeError(`${folder} is the rosetta-js folder itself; using ${DEFAULT_WORK_FOLDER} instead.`);
-    return enterFolder(createFolder(DEFAULT_WORK_FOLDER), "default");
-  }
-  return enterFolder(createFolder(folder), "your answer");
+  fs.mkdirSync(DEFAULT_WORK_FOLDER, { recursive: true });
+  return { folder: DEFAULT_WORK_FOLDER, source: "default" };
 }
 
 function describeFolderProblem(folder) {
@@ -41,18 +35,7 @@ function describeFolderProblem(folder) {
   return null;
 }
 
-function enterFolder(folder, source) {
-  setProjectRoot(folder);
-  writeDimLine(`Working folder: ${process.cwd()} (${source})`);
-  return true;
-}
-
-function createFolder(folder) {
-  fs.mkdirSync(folder, { recursive: true });
-  return path.resolve(folder);
-}
-
-function isInsideHarness(folder) {
+export function isInsideHarness(folder) {
   const real = realPath(path.resolve(folder));
   const harness = realPath(HARNESS_ROOT);
   return real === harness || real.startsWith(`${harness}${path.sep}`);
@@ -66,7 +49,7 @@ function realPath(folder) {
   }
 }
 
-function expandHome(folder) {
+export function expandHome(folder) {
   if (folder === "~" || folder.startsWith("~/")) return path.join(os.homedir(), folder.slice(1));
   return path.resolve(folder);
 }

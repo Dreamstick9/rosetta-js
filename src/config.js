@@ -3,8 +3,9 @@ import { fileURLToPath } from "node:url";
 
 const CONFIG_URL = new URL("../config.json", import.meta.url);
 const TEXT_FIELDS = ["baseUrl", "model"];
+const POLICIES = ["standard", "off"];
 const NUMBER_FIELDS = [
-  "maxContextTokens", "maxOutputTokens", "temperature", "topP", "maxTurns",
+  "maxContextTokens", "maxOutputTokens", "temperature", "topP", "maxTurns", "maxSessionUsd",
   "pricing.inputPerMTok", "pricing.cachedInputPerMTok", "pricing.outputPerMTok",
   "context.maxToolOutputBytes", "context.compactStartShare", "context.compactTargetShare", "context.keptToolResults",
   "agent.maxEmptyReplyNudges", "agent.maxCheckRounds", "agent.failureTailLines",
@@ -50,6 +51,8 @@ function checkFields(config) {
     if (typeof readField(config, field) !== "number") failField(field, "a number");
   }
   if (config.seed !== null && !Number.isInteger(config.seed)) failField("seed", "an integer or null");
+  if (!POLICIES.includes(config.policy)) failField("policy", `one of ${POLICIES.join(", ")}`);
+  if (typeof config.exitAfterTask !== "boolean") failField("exitAfterTask", "true or false");
 }
 
 function readField(config, field) {

@@ -11,7 +11,7 @@ export class Trace {
     this.config = config;
     this.pricing = config.pricing;
     this.file = null;
-    this.totals = { modelCalls: 0, toolCalls: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, cost: 0 };
+    this.totals = { modelCalls: 0, toolCalls: 0, blockedCalls: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, cost: 0 };
   }
 
   recordModelCall({ ms, inputTokens, cachedTokens, outputTokens, finishReason }) {
@@ -25,9 +25,10 @@ export class Trace {
     return cost;
   }
 
-  recordToolCall({ name, args, ms, bytes, status }) {
+  recordToolCall({ name, args, ms, bytes, status, reason }) {
     this.totals.toolCalls++;
-    this.write({ type: "tool", name, args, ms, bytes, status });
+    if (status === "blocked") this.totals.blockedCalls++;
+    this.write({ type: "tool", name, args, ms, bytes, status, reason });
   }
 
   recordCompaction({ before, after }) {
@@ -67,6 +68,7 @@ function describeSession(config) {
     temperature: config.temperature,
     topP: config.topP,
     seed: config.seed,
+    policy: config.policy,
   };
 }
 

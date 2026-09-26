@@ -9,6 +9,7 @@ import { createReplyPrinter, writeDimLine, writeError, writeToolLine } from "./u
 
 const SYSTEM_PROMPT = `You are a coding agent working in the user's project directory.
 Use the tools to inspect, change and test the project. Paths are relative to the project root, or absolute.
+Some calls are blocked by a safety policy (writing outside the project and /tmp, git push, credential files, secret variables). When a call is blocked, choose another way.
 Use search to find code. Read files before editing them, and prefer edit_file for small changes.
 The bash tool runs in one persistent shell, so cd and environment changes carry over between calls.
 When the project has tests, run them after making changes.
@@ -45,6 +46,7 @@ export class Agent {
     const task = { stats, outcome: "done", nudges: 0, checkRounds: 0, changedFiles: false, snapshot: takeProjectSnapshot() };
     for (let turn = 1; turn <= this.config.maxTurns; turn++) {
       stats.turns = turn;
+      if (this.trace.totals.cost >= this.config.maxSessionUsd) return this.stopForBudget(stats);
       const reply = await this.requestReply(signal, stats);
       if (reply.toolCalls.length > 0) {
         await this.runTools(reply.toolCalls, signal, task);
@@ -56,6 +58,11 @@ export class Agent {
     }
     writeError(`Stopped: this task reached maxTurns (${this.config.maxTurns} model calls).`);
     return { ...stats, outcome: "max_turns" };
+  }
+
+  stopForBudget(stats) {
+    writeError(`Stopped: the session cost reached maxSessionUsd ($${this.config.maxSessionUsd}).`);
+    return { ...stats, outcome: "budget" };
   }
 
   async requestReply(signal, stats) {
@@ -97,7 +104,8 @@ export class Agent {
     const content = truncateOutput(output);
     const summary = summarizeToolArguments(call.args);
     writeToolLine({ name: call.name, summary, status, output });
-    this.trace.recordToolCall({ name: call.name, args: summary, ms, bytes: Buffer.byteLength(content), status });
+    const reason = status === "blocked" ? output : undefined;
+    this.trace.recordToolCall({ name: call.name, args: summary, ms, bytes: Buffer.byteLength(content), status, reason });
     this.messages.push({ role: "tool", tool_call_id: call.id, content });
     if (status !== "ok") return;
     if (FILE_TOOLS.has(call.name)) this.touchedFiles.add(call.args.path);
