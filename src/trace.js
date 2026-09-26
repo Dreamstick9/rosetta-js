@@ -1,8 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { PROJECT_ROOT } from "./config.js";
 
 const TOKENS_PER_MILLION = 1_000_000;
+const RUNS_DIRECTORY = fileURLToPath(new URL("../runs/", import.meta.url));
 
 export class Trace {
   constructor(pricing) {
@@ -32,7 +34,10 @@ export class Trace {
   }
 
   write(entry) {
-    if (!this.file) this.file = createTraceFile();
+    if (!this.file) {
+      this.file = createTraceFile();
+      this.write({ type: "session", projectRoot: PROJECT_ROOT });
+    }
     const line = JSON.stringify({ time: new Date().toISOString(), ...entry });
     fs.appendFileSync(this.file, `${line}\n`);
   }
@@ -56,7 +61,7 @@ function calculateCost(pricing, inputTokens, cachedTokens, outputTokens) {
 
 function createTraceFile() {
   const timestamp = new Date().toISOString().replaceAll(":", "-").replace(".", "-");
-  const directory = path.join(PROJECT_ROOT, "runs", timestamp);
+  const directory = path.join(RUNS_DIRECTORY, timestamp);
   fs.mkdirSync(directory, { recursive: true });
   return path.join(directory, "trace.jsonl");
 }

@@ -48,6 +48,7 @@ cat task.txt | node /path/to/rosetta-js/src/cli.js
 | `/exit`                   | quit                                               |
 | Esc or Ctrl-C during a turn | stop the turn and return to the prompt           |
 | Ctrl-C at the prompt      | quit                                               |
+| ↑ / ↓ at the prompt       | bring back earlier messages                        |
 
 Lines that start with `/` are never sent to the model.
 
@@ -82,11 +83,13 @@ Environment variables:
   folder the agent was started in, or absolute. Several read-only calls in one
   reply run at the same time.
 - **bash**: one shell for the whole session, so `cd`, variables and virtualenvs
-  carry over. Commands time out after 120 s.
+  carry over. Commands time out after 120 s; a timeout or Esc stops the whole
+  command line and keeps the shell.
 - **No guardrails** (this branch): every command runs without asking, and
   the file tools can read and write anywhere your user account can. Run it only
   in folders and on machines where that is fine.
-- **Done-check**: when a turn changed files, the agent's tests are run
+- **Done-check**: when a turn really changed project files (sizes or
+  modification times differ from the start of the turn), the tests are run
   (`npm test`, pytest or unittest, `cargo test`, `go test`). On failure the
   model gets the last 60 lines and up to 2 more tries.
 - **Robustness**: network errors, 429 and 5xx are retried 3 times with backoff
@@ -94,7 +97,8 @@ Environment variables:
   replies get up to 2 "please continue" nudges.
 - **Cost and trace**: a footer after each answer
   (`$0.0002 · 6.6s · cache 90% · in 12503 · out 443`), and one JSON line per
-  model call, tool call and compaction in `runs/<timestamp>/trace.jsonl`.
+  model call, tool call and compaction in `runs/<timestamp>/trace.jsonl`
+  inside the rosetta-js folder (the first line names the project it ran in).
 
 ## Context management
 

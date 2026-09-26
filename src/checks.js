@@ -2,12 +2,57 @@ import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { PROJECT_ROOT } from "./config.js";
+import { IGNORED_DIRECTORIES } from "./tools/files.js";
 import { writeDimLine } from "./ui.js";
 
 const CHECK_TIMEOUT_MS = 180_000;
 const FAILURE_TAIL_LINES = 60;
 const NPM_PLACEHOLDER_TEST = "no test specified";
 const VENV_PYTHON = ".venv/bin/python";
+const MAX_SNAPSHOT_ENTRIES = 20_000;
+const SNAPSHOT_SKIPPED_DIRECTORIES = new Set([...IGNORED_DIRECTORIES, "__pycache__", ".pytest_cache"]);
+
+export function takeProjectSnapshot() {
+  const snapshot = new Map();
+  const pendingDirectories = [PROJECT_ROOT];
+  let entryCount = 0;
+  while (pendingDirectories.length > 0) {
+    const directory = pendingDirectories.pop();
+    for (const entry of readDirectory(directory)) {
+      entryCount++;
+      if (entryCount > MAX_SNAPSHOT_ENTRIES) return null;
+      const fullPath = path.join(directory, entry.name);
+      if (entry.isFile()) snapshot.set(fullPath, describeFile(fullPath));
+      if (entry.isDirectory() && !SNAPSHOT_SKIPPED_DIRECTORIES.has(entry.name)) pendingDirectories.push(fullPath);
+    }
+  }
+  return snapshot;
+}
+
+function readDirectory(directory) {
+  try {
+    return fs.readdirSync(directory, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+}
+
+function describeFile(file) {
+  try {
+    const stats = fs.statSync(file);
+    return `${stats.mtimeMs}:${stats.size}`;
+  } catch {
+    return "unreadable";
+  }
+}
+
+export function snapshotsDiffer(before, after) {
+  if (!before || !after || before.size !== after.size) return true;
+  for (const [file, description] of after) {
+    if (before.get(file) !== description) return true;
+  }
+  return false;
+}
 
 export function findTestCommand() {
   if (hasNpmTestScript()) return "npm test --silent";

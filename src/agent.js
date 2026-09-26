@@ -2,7 +2,7 @@ import { requestCompletion } from "./model.js";
 import { buildAssistantMessage } from "./stream.js";
 import { TOOL_DEFINITIONS, runToolCalls, summarizeToolArguments } from "./tools/index.js";
 import { compactMessages, estimateTokens, isPrefixStable, needsCompaction, truncateOutput } from "./context.js";
-import { findTestCommand, runDoneCheck } from "./checks.js";
+import { findTestCommand, runDoneCheck, snapshotsDiffer, takeProjectSnapshot } from "./checks.js";
 import { readTokenCounts } from "./trace.js";
 import { createReplyPrinter, writeDimLine, writeError, writeToolLine } from "./ui.js";
 
@@ -42,7 +42,7 @@ export class Agent {
     this.currentRequest = userText;
     this.messages.push({ role: "user", content: userText });
     const stats = { cost: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0 };
-    const task = { stats, nudges: 0, checkRounds: 0, changedFiles: false };
+    const task = { stats, nudges: 0, checkRounds: 0, changedFiles: false, snapshot: takeProjectSnapshot() };
     for (let turn = 1; turn <= this.config.maxTurns; turn++) {
       const reply = await this.requestReply(signal, stats);
       if (reply.toolCalls.length > 0) {
@@ -117,6 +117,10 @@ export class Agent {
   async checkWork(signal, task) {
     if (!this.doneCheckEnabled || !task.changedFiles) return null;
     task.changedFiles = false;
+    const snapshot = takeProjectSnapshot();
+    const filesChanged = snapshotsDiffer(task.snapshot, snapshot);
+    task.snapshot = snapshot;
+    if (!filesChanged) return null;
     this.testCommand = findTestCommand();
     if (!this.testCommand) return null;
     const check = await runDoneCheck(this.testCommand, signal);

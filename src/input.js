@@ -10,6 +10,10 @@ const CTRL_C = "\x03";
 const CTRL_D = "\x04";
 const ENTER_KEYS = new Set(["\r", "\n"]);
 const BACKSPACE_KEYS = new Set(["\x7f", "\b"]);
+const ARROW_UP = "\x1b[A";
+const ARROW_DOWN = "\x1b[B";
+
+const history = [];
 
 export function startTerminalInput() {
   process.stdin.setRawMode(true);
@@ -32,9 +36,11 @@ export async function readPipedInput() {
   return text.trim();
 }
 
-export function readUserMessage() {
+export async function readUserMessage() {
   writeText("\n> ");
-  return new Promise((resolve) => new LineEditor(resolve));
+  const message = await new Promise((resolve) => new LineEditor(resolve));
+  if (message?.trim()) history.push(message);
+  return message;
 }
 
 export function watchForInterrupt(onInterrupt) {
@@ -54,6 +60,7 @@ class LineEditor {
     this.submitTimer = null;
     this.sawFastEnter = false;
     this.finished = false;
+    this.historyIndex = history.length;
     process.stdin.on("data", this.listener);
   }
 
@@ -69,6 +76,8 @@ class LineEditor {
       this.pasteText = "";
       return rest.slice(PASTE_START.length);
     }
+    if (rest.startsWith(ARROW_UP)) return this.browseHistory(-1, rest);
+    if (rest.startsWith(ARROW_DOWN)) return this.browseHistory(1, rest);
     if (rest.startsWith(ESCAPE)) return skipEscapeSequence(rest);
     const key = String.fromCodePoint(rest.codePointAt(0));
     this.handleKey(key);
@@ -90,6 +99,15 @@ class LineEditor {
     const normalized = text.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
     const lineCount = normalized.split("\n").length;
     this.addSegment(normalized, lineCount === 1 ? normalized : `(pasted ${lineCount} lines) `);
+  }
+
+  browseHistory(step, rest) {
+    const index = this.historyIndex + step;
+    if (index < 0 || index > history.length) return rest.slice(ARROW_UP.length);
+    this.historyIndex = index;
+    while (this.segments.length > 0) this.removeLastSegment();
+    if (index < history.length) this.addPaste(history[index]);
+    return rest.slice(ARROW_UP.length);
   }
 
   handleKey(key) {

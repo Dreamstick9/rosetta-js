@@ -4,7 +4,8 @@ import { PROJECT_ROOT } from "../config.js";
 
 const COMMAND_TIMEOUT_MS = 120_000;
 const KILL_GRACE_MS = 2000;
-const SHELL_SETUP = "trap 'true' INT\n";
+const IGNORE_INTERRUPTS = "trap 'true' INT";
+const SHELL_SETUP = `__rosetta_run() { trap 'return 130' INT; eval "$1"; }\n${IGNORE_INTERRUPTS}\n`;
 
 class ShellSession {
   constructor() {
@@ -92,8 +93,9 @@ function buildScript(command, marker) {
     `IFS= read -r -d '' __rosetta_command <<'${delimiter}'`,
     command,
     delimiter,
-    `eval "$__rosetta_command" < /dev/null 2>&1`,
+    `__rosetta_run "$__rosetta_command" < /dev/null 2>&1`,
     "__rosetta_status=$?",
+    IGNORE_INTERRUPTS,
     `printf '\\n%s %s %s\\n' '${marker}' "$__rosetta_status" "$(pwd -P)"`,
     "",
   ].join("\n");
