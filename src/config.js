@@ -9,6 +9,8 @@ const NUMBER_FIELDS = [
   "pricing.inputPerMTok", "pricing.cachedInputPerMTok", "pricing.outputPerMTok",
   "context.maxToolOutputBytes", "context.compactStartShare", "context.compactTargetShare", "context.keptToolResults",
   "agent.maxEmptyReplyNudges", "agent.maxCheckRounds", "agent.failureTailLines",
+  "loop.maxAttempts", "loop.stallNoteTurns", "loop.stallEndTurns", "loop.giveUpMinAttempts",
+  "loop.lessonsInPrefix", "loop.milestoneCompactShare", "loop.checkTimeoutSeconds", "loop.maxDiffLines",
   "timeouts.commandSeconds", "timeouts.testCheckSeconds", "timeouts.streamStallSeconds",
   "retries.maxRetries", "retries.maxStallRetries", "retries.baseBackoffMs", "retries.maxRetryAfterMs",
   "tools.maxSearchMatches", "tools.maxSearchLineLength", "tools.listDepth", "tools.readLineLimit",

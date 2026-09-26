@@ -3,10 +3,12 @@ import { searchTool } from "./search.js";
 import { MAIN_SHELL, bashTool } from "./shell.js";
 import { skillTool } from "./skill.js";
 import { PROJECT_ROOT } from "../config.js";
+import { todoTool } from "./todo.js";
+import { giveUpTool } from "./give_up.js";
 import { checkToolCall, describeBlock } from "../policy.js";
 import { describeToolRefusal } from "../roles.js";
 
-const TOOLS = [...FILE_TOOLS, searchTool, bashTool, skillTool];
+const TOOLS = [...FILE_TOOLS, searchTool, bashTool, skillTool, todoTool, giveUpTool];
 const READ_ONLY_TOOL_NAMES = new Set(["list_files", "read_file", "search", "skill"]);
 const SUMMARY_LENGTH = 60;
 const INTERRUPTED_RESULT = "Interrupted by the user.";
@@ -76,7 +78,7 @@ function checkArguments(definition, args) {
 }
 
 export function summarizeToolArguments(args) {
-  const value = args?.path ?? args?.pattern ?? args?.command ?? args?.name ?? "";
+  const value = args?.path ?? args?.pattern ?? args?.command ?? args?.name ?? args?.action ?? args?.reason ?? "";
   const text = String(value).replaceAll("\n", " ").trim();
   if (text.length <= SUMMARY_LENGTH) return text;
   return `${text.slice(0, SUMMARY_LENGTH)}…`;

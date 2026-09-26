@@ -52,7 +52,7 @@ export function needsCompaction(tokens, maxContextTokens) {
 export function compactMessages(messages, details) {
   const targetTokens = details.maxContextTokens * COMPACT_TARGET_SHARE;
   const stubbed = stubOldToolResults(messages);
-  if (estimateTokens(stubbed) + details.toolTokens <= targetTokens) return stubbed;
+  if (!details.forceSummary && estimateTokens(stubbed) + details.toolTokens <= targetTokens) return stubbed;
   return rebuildConversation(stubbed, details, targetTokens);
 }
 
@@ -95,13 +95,14 @@ function rebuildConversation(messages, details, targetTokens) {
   return [messages[0], summary, ...messages.slice(start)];
 }
 
-function buildSummary({ originalTask, currentRequest, touchedFiles }) {
+function buildSummary({ originalTask, currentRequest, touchedFiles, planText }) {
   const sections = [
     "The conversation was compacted to save context.",
     `Original task:\n${originalTask}`,
     `Files touched so far: ${[...touchedFiles].join(", ") || "none"}`,
   ];
   if (currentRequest !== originalTask) sections.push(`Latest request:\n${currentRequest}`);
+  if (planText) sections.push(planText);
   sections.push("The most recent messages follow.");
   return sections.join("\n\n");
 }

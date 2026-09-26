@@ -31,8 +31,8 @@ export class Trace {
     this.write({ type: "tool", name, args, ms, bytes, status, reason });
   }
 
-  recordPromptLoad({ instructionsFile, instructionsTruncated, skills, catalogSkills }) {
-    this.write({ type: "prompt", instructionsFile, instructionsTruncated, skills, catalogSkills });
+  recordPromptLoad({ instructionsFile, instructionsTruncated, skills, catalogSkills, lessons }) {
+    this.write({ type: "prompt", instructionsFile, instructionsTruncated, skills, catalogSkills, lessons });
   }
 
   recordIntake({ repo, issue, folder, checkout, ms }) {
@@ -41,6 +41,38 @@ export class Trace {
 
   recordCompaction({ before, after }) {
     this.write({ type: "compaction", before, after });
+  }
+
+  recordCheckpoint({ label, ref }) {
+    this.write({ type: "checkpoint", label, ref });
+  }
+
+  recordTick({ attempt, id, text, check }) {
+    this.write({ type: "tick", attempt, id, text, check });
+  }
+
+  recordStall({ attempt, quietTurns, action }) {
+    this.write({ type: "stall", attempt, quietTurns, action });
+  }
+
+  recordLesson({ attempt, outcome, diffStat }) {
+    this.write({ type: "lesson", attempt, outcome, diffStat });
+  }
+
+  recordAttemptStart({ attempt, checkpoint, resumed }) {
+    this.write({ type: "attempt_start", attempt, checkpoint, resumed });
+  }
+
+  recordAttemptEnd({ attempt, outcome, score, turns, toolCalls }) {
+    this.write({ type: "attempt_end", attempt, outcome, score, turns, toolCalls });
+  }
+
+  recordGiveUp({ attempt, reason, accepted }) {
+    this.write({ type: "give_up", attempt, reason, accepted });
+  }
+
+  recordResume({ attempt, checkpoint, doneItems }) {
+    this.write({ type: "resume", attempt, checkpoint, doneItems });
   }
 
   recordTaskEnd({ outcome, turns, seconds, cost, inputTokens, cachedTokens, outputTokens }) {

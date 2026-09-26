@@ -11,7 +11,7 @@ const FAILURE_TAIL_LINES = CONFIG.agent.failureTailLines;
 const NPM_PLACEHOLDER_TEST = "no test specified";
 const VENV_PYTHON = ".venv/bin/python";
 const MAX_SNAPSHOT_ENTRIES = 20_000;
-const SNAPSHOT_SKIPPED_DIRECTORIES = new Set([...IGNORED_DIRECTORIES, "__pycache__", ".pytest_cache"]);
+const SNAPSHOT_SKIPPED_DIRECTORIES = new Set([...IGNORED_DIRECTORIES, "__pycache__", ".pytest_cache", ".rosetta"]);
 
 export function takeProjectSnapshot(root = PROJECT_ROOT) {
   const snapshot = new Map();
@@ -102,22 +102,22 @@ function findPythonTestCommand(root) {
 }
 
 export async function runDoneCheck(command, signal, root = PROJECT_ROOT) {
-  const result = await runTestCommand(command, signal, root);
+  const result = await runCheckCommand(command, signal, CHECK_TIMEOUT_MS, root);
   signal.throwIfAborted();
   writeDimLine(`check: ${command} ${result.passed ? "✓" : "✗"}`);
   const failureMessage = `I ran \`${command}\` after your changes and it failed. Last lines of output:\n${result.tail}\n\nPlease fix the problem.`;
-  return { passed: result.passed, failureMessage };
+  return { passed: result.passed, tail: result.tail, failureMessage };
 }
 
-function runTestCommand(command, signal, root) {
+export function runCheckCommand(command, signal, timeoutMs, root = PROJECT_ROOT) {
   return new Promise((resolve) => {
-    const child = spawn("bash", ["-c", command], { cwd: root, env: buildChildEnvironment(), signal, timeout: CHECK_TIMEOUT_MS, killSignal: "SIGKILL" });
+    const child = spawn("bash", ["-c", command], { cwd: root, env: buildChildEnvironment(), signal, timeout: timeoutMs, killSignal: "SIGKILL" });
     let output = "";
     child.stdout.on("data", (data) => (output += data));
     child.stderr.on("data", (data) => (output += data));
     child.on("error", (error) => (output += `\n${error.message}`));
     child.on("close", (exitCode) => {
-      if (exitCode === null) output += `\n[the test command was stopped (timeout ${CHECK_TIMEOUT_MS / 1000}s or interrupt)]`;
+      if (exitCode === null) output += `\n[the command was stopped (timeout ${timeoutMs / 1000}s or interrupt)]`;
       resolve({ passed: exitCode === 0, tail: lastLines(output, FAILURE_TAIL_LINES) });
     });
   });

@@ -2,18 +2,14 @@ import { requestCompletion } from "./model.js";
 import { buildAssistantMessage } from "./stream.js";
 import { TOOL_DEFINITIONS, runToolCalls, summarizeToolArguments } from "./tools/index.js";
 import { compactMessages, estimateTokens, isPrefixStable, needsCompaction, truncateOutput } from "./context.js";
-import { findTestCommand, runDoneCheck, snapshotsDiffer, takeProjectSnapshot } from "./checks.js";
 import { readTokenCounts } from "./trace.js";
-import { CONFIG } from "./config.js";
 import { buildSessionPrompt, describeLoadedContext } from "./prompt.js";
+import { TaskLoop } from "./attempts.js";
+import { describeUnresumable, loadSession } from "./session.js";
 import { createReplyPrinter, writeDimLine, writeError, writeToolLine } from "./ui.js";
 
 const TOOL_TOKENS = estimateTokens(TOOL_DEFINITIONS);
-const MAX_NUDGES = CONFIG.agent.maxEmptyReplyNudges;
-const MAX_CHECK_ROUNDS = CONFIG.agent.maxCheckRounds;
-const NUDGE_MESSAGE = "Please continue.";
 const FILE_TOOLS = new Set(["read_file", "create_file", "write_file", "edit_file", "delete_file"]);
-const CHANGING_TOOLS = new Set(["create_file", "write_file", "edit_file", "delete_file", "bash"]);
 
 export class Agent {
   constructor({ config, trace }) {
@@ -21,6 +17,7 @@ export class Agent {
     this.trace = trace;
     this.doneCheckEnabled = true;
     this.systemMessage = null;
+    this.loop = new TaskLoop(this);
     this.reset();
   }
 
@@ -35,23 +32,28 @@ export class Agent {
     this.loadSystemMessage();
     this.originalTask ??= userText;
     this.currentRequest = userText;
-    this.messages.push({ role: "user", content: userText });
-    const stats = { cost: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0 };
-    const task = { stats, outcome: "done", nudges: 0, checkRounds: 0, changedFiles: false, snapshot: takeProjectSnapshot() };
-    for (let turn = 1; turn <= this.config.maxTurns; turn++) {
-      stats.turns = turn;
-      if (this.trace.totals.cost >= this.config.maxSessionUsd) return this.stopForBudget(stats);
-      const reply = await this.requestReply(signal, stats);
-      if (reply.toolCalls.length > 0) {
-        await this.runTools(reply.toolCalls, signal, task);
-        continue;
-      }
-      const followUp = await this.findFollowUp(reply, signal, task);
-      if (!followUp) return { ...stats, outcome: task.outcome };
-      this.messages.push({ role: "user", content: followUp });
-    }
-    writeError(`Stopped: this task reached maxTurns (${this.config.maxTurns} model calls).`);
-    return { ...stats, outcome: "max_turns" };
+    this.addUserMessage(userText);
+    return this.loop.runTask(userText, signal);
+  }
+
+  async resumeTask(signal) {
+    const saved = loadSession();
+    const problem = describeUnresumable(saved);
+    if (problem) throw new Error(`Cannot resume: ${problem}.`);
+    this.loadSystemMessage();
+    this.originalTask = saved.task;
+    this.currentRequest = saved.task;
+    return this.loop.resume(saved, signal);
+  }
+
+  startConversation(text) {
+    this.messages = [this.systemMessage, { role: "user", content: text }];
+    this.touchedFiles = new Set();
+    this.usageMark = null;
+  }
+
+  addUserMessage(text) {
+    this.messages.push({ role: "user", content: text });
   }
 
   loadSystemMessage() {
@@ -61,11 +63,6 @@ export class Agent {
     this.messages.unshift(prompt.message);
     this.trace.recordPromptLoad(prompt.loaded);
     writeDimLine(describeLoadedContext(prompt.loaded));
-  }
-
-  stopForBudget(stats) {
-    writeError(`Stopped: the session cost reached maxSessionUsd ($${this.config.maxSessionUsd}).`);
-    return { ...stats, outcome: "budget" };
   }
 
   async requestReply(signal, stats) {
@@ -97,68 +94,42 @@ export class Agent {
     if (reply.usage) this.usageMark = { tokens: tokens.inputTokens + tokens.outputTokens, messageCount: this.messages.length };
   }
 
-  async runTools(calls, signal, task) {
-    const results = await runToolCalls(calls, { signal });
-    for (const result of results) this.recordToolResult(result, task);
+  async runTools(calls, signal) {
+    const results = await runToolCalls(calls, { signal, loop: this.loop });
+    for (const result of results) this.recordToolResult(result);
     signal.throwIfAborted();
+    return results;
   }
 
-  recordToolResult({ call, output, status, ms }, task) {
+  recordToolResult({ call, output, status, ms }) {
     const content = truncateOutput(output);
     const summary = summarizeToolArguments(call.args);
     writeToolLine({ name: call.name, summary, status, output });
     const reason = status === "blocked" ? output : undefined;
     this.trace.recordToolCall({ name: call.name, args: summary, ms, bytes: Buffer.byteLength(content), status, reason });
     this.messages.push({ role: "tool", tool_call_id: call.id, content });
-    if (status !== "ok") return;
-    if (FILE_TOOLS.has(call.name)) this.touchedFiles.add(call.args.path);
-    if (CHANGING_TOOLS.has(call.name)) task.changedFiles = true;
-  }
-
-  async findFollowUp(reply, signal, task) {
-    if (reply.content.trim()) return this.checkWork(signal, task);
-    if (task.nudges >= MAX_NUDGES) {
-      writeError("The model returned an empty reply.");
-      task.outcome = "empty_reply";
-      return null;
-    }
-    task.nudges++;
-    writeDimLine("[empty reply; asking the model to continue]");
-    return NUDGE_MESSAGE;
-  }
-
-  async checkWork(signal, task) {
-    if (!this.doneCheckEnabled || !task.changedFiles) return null;
-    task.changedFiles = false;
-    const snapshot = takeProjectSnapshot();
-    const filesChanged = snapshotsDiffer(task.snapshot, snapshot);
-    task.snapshot = snapshot;
-    if (!filesChanged) return null;
-    const testCommand = findTestCommand();
-    if (!testCommand) return null;
-    const check = await runDoneCheck(testCommand, signal);
-    if (check.passed) return null;
-    if (task.checkRounds >= MAX_CHECK_ROUNDS) {
-      task.outcome = "tests_failing";
-      return null;
-    }
-    task.checkRounds++;
-    return check.failureMessage;
+    if (status === "ok" && FILE_TOOLS.has(call.name)) this.touchedFiles.add(call.args.path);
   }
 
   compactIfNeeded() {
+    if (!needsCompaction(this.estimateContextTokens(), this.config.maxContextTokens)) return;
+    this.compact(false);
+  }
+
+  compact(forceSummary) {
     const before = this.estimateContextTokens();
-    if (!needsCompaction(before, this.config.maxContextTokens)) return;
     this.messages = compactMessages(this.messages, {
       originalTask: this.originalTask,
       currentRequest: this.currentRequest,
       touchedFiles: this.touchedFiles,
+      planText: this.loop.plan.items.length > 0 ? this.loop.plan.render() : null,
+      forceSummary,
       maxContextTokens: this.config.maxContextTokens,
       toolTokens: TOOL_TOKENS,
     });
     this.usageMark = null;
     const after = this.estimateContextTokens();
-    writeDimLine(`[context compacted: ${before} → ${after} tokens]`);
+    writeDimLine(`[context compacted${forceSummary ? " at a plan milestone" : ""}: ${before} → ${after} tokens]`);
     this.trace.recordCompaction({ before, after });
   }
 

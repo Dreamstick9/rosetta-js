@@ -26,6 +26,16 @@
     "maxCheckRounds": 2,
     "failureTailLines": 60
   },
+  "loop": {
+    "maxAttempts": 3,
+    "stallNoteTurns": 6,
+    "stallEndTurns": 12,
+    "giveUpMinAttempts": 2,
+    "lessonsInPrefix": 5,
+    "milestoneCompactShare": 0.5,
+    "checkTimeoutSeconds": 60,
+    "maxDiffLines": 200
+  },
   "timeouts": {
     "commandSeconds": 120,
     "testCheckSeconds": 180,
