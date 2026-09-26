@@ -59,5 +59,6 @@ function readField(config, field) {
 }
 
 function failField(field, expected) {
-  throw new Error(`config.json: "${field}" must be ${expected}.`);
+  console.error(`config.json: "${field}" must be ${expected}.`);
+  process.exit(1);
 }
