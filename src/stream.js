@@ -1,3 +1,6 @@
+import { takeReasoningDelta } from "./model/reasoning.js";
+import { isQuotaError, quotaMessage } from "./model/errors.js";
+
 const DATA_PREFIX = "data:";
 const DONE_MARKER = "[DONE]";
 
@@ -12,7 +15,7 @@ export async function parseStream(body, handlers) {
     if (choice?.finish_reason) reply.finishReason = choice.finish_reason;
     if (choice?.delta) applyDelta(reply, choice.delta, handlers);
   }
-  reply.toolCalls = reply.toolCalls.filter(Boolean).map(normalizeToolCall);
+  reply.toolCalls = reply.toolCalls.filter(Boolean);
   return reply;
 }
 
@@ -43,7 +46,9 @@ function parseChunk(data) {
 
 function createStreamError(apiError) {
   const status = Number(apiError.code) || 0;
-  const error = new Error(`API error in stream: ${JSON.stringify(apiError).slice(0, 300)}`);
+  const details = JSON.stringify(apiError);
+  if (isQuotaError(status, details)) return Object.assign(new Error(quotaMessage(status, details)), { retryable: false });
+  const error = new Error(`API error in stream: ${details.slice(0, 300)}`);
   error.retryable = status === 429 || status >= 500;
   return error;
 }
@@ -53,19 +58,8 @@ function applyDelta(reply, delta, handlers) {
     reply.content += delta.content;
     handlers.onText(delta.content);
   }
-  const reasoning = readReasoning(delta);
-  if (reasoning) {
-    reply.reasoning += reasoning.text;
-    reply.reasoningField ??= reasoning.field;
-    handlers.onReasoning();
-  }
+  if (takeReasoningDelta(reply, delta)) handlers.onReasoning();
   for (const part of delta.tool_calls ?? []) addToolCallPart(reply.toolCalls, part);
-}
-
-function readReasoning(delta) {
-  if (delta.reasoning) return { field: "reasoning", text: delta.reasoning };
-  if (delta.reasoning_content) return { field: "reasoning_content", text: delta.reasoning_content };
-  return null;
 }
 
 function addToolCallPart(toolCalls, part) {
@@ -75,26 +69,4 @@ function addToolCallPart(toolCalls, part) {
   if (part.id) call.id = part.id;
   if (part.function?.name) call.name += part.function.name;
   if (part.function?.arguments) call.arguments += part.function.arguments;
-}
-
-function normalizeToolCall(call, index) {
-  const normalized = { id: call.id || `call_${index}`, name: call.name, arguments: call.arguments || "{}" };
-  try {
-    normalized.args = JSON.parse(normalized.arguments);
-  } catch {
-    normalized.argumentsError = `invalid JSON in arguments for ${call.name}: ${call.arguments.slice(0, 200)}. Retry with valid JSON.`;
-    normalized.arguments = "{}";
-  }
-  return normalized;
-}
-
-export function buildAssistantMessage(reply) {
-  const message = { role: "assistant", content: reply.content };
-  if (reply.reasoningField) message[reply.reasoningField] = reply.reasoning;
-  if (reply.toolCalls.length > 0) message.tool_calls = reply.toolCalls.map(toApiToolCall);
-  return message;
-}
-
-function toApiToolCall(call) {
-  return { id: call.id, type: "function", function: { name: call.name, arguments: call.arguments } };
 }

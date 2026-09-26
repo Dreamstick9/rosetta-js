@@ -59,7 +59,7 @@ export function compactMessages(messages, details) {
 function stubOldToolResults(messages) {
   const toolIndexes = [];
   for (let i = 0; i < messages.length; i++) {
-    if (messages[i].role === "tool") toolIndexes.push(i);
+    if (isToolResult(messages[i])) toolIndexes.push(i);
   }
   const oldIndexes = new Set(toolIndexes.slice(0, -KEPT_TOOL_RESULTS));
   const labels = labelToolCalls(messages);
@@ -67,6 +67,10 @@ function stubOldToolResults(messages) {
     if (!oldIndexes.has(index)) return message;
     return { ...message, content: `[old result of ${labels.get(message.tool_call_id) ?? "tool"} removed]` };
   });
+}
+
+function isToolResult(message) {
+  return message.role === "tool" || message.role === "user" && message.content.startsWith("<tool_result");
 }
 
 function labelToolCalls(messages) {

@@ -108,6 +108,10 @@ naming the field, and there is no fallback to another model.
 | `timeouts.streamStallSeconds` | a silent model stream is retried after this |
 | `retries.*` | `maxRetries` for network, 429 and 5xx errors, `maxStallRetries`, `baseBackoffMs`, `maxRetryAfterMs` |
 | `tools.*` | `maxSearchMatches`, `maxSearchLineLength`, `listDepth` and `readLineLimit` for the file tools |
+| `adapter.dialect` | tool-call format: `auto` (from the probe), `native`, `xml` or `json-block` |
+| `adapter.reasoningEffort` | `reasoning_effort` sent normally (`""` sends none) |
+| `adapter.escalatedReasoningEffort` | effort for the one call after failed tests, an empty reply or repeated tool errors |
+| `adapter.probe` | probe the model at start (`false` assumes native tools) |
 
 The default pricing for `deepseek/deepseek-v4.1-flash` ($0.035 input, $0.001
 cached input, $0.29 output per million tokens) comes from the Hack Club
@@ -120,6 +124,7 @@ Environment variables:
 - `AI_BASE_URL`, `AI_MODEL`: override `baseUrl` and `model`. The effective
   model and URL are printed at start, with a note when an override is active,
   and recorded in the trace.
+- `AI_DIALECT`: overrides `adapter.dialect`.
 - `REPO` / `REPO_PATH`: the working folder. `ISSUE`: the task text, or a path
   to a file holding it.
 
@@ -161,6 +166,38 @@ Environment variables:
   model call, tool call, compaction and finished task in
   `runs/<timestamp>/trace.jsonl` inside the rosetta-js folder.
 
+## Model adapter
+
+The harness adapts to whichever OpenAI-compatible model it is given
+(`src/model/`):
+
+- **Probe**: at start, one tiny tool-call request plus `GET /models` detect
+  the model family, native tool calls, the field that carries reasoning
+  (`reasoning`, `reasoning_content`, `reasoning_details` or `<think>` tags),
+  where cached tokens are reported, whether `reasoning_effort` is accepted and
+  the context window (which caps `maxContextTokens`). The result is printed as
+  one dim `probe:` line and cached in `~/.cache/rosetta-js/probe.json` per URL
+  and model, only when the probe ran cleanly.
+- **Reasoning**: one reasoning field is kept per reply and sent back in that
+  same field (the proxy sends the same text as both `reasoning` and
+  `reasoning_details`; keeping both doubled the echoed tokens). It is dropped
+  only at compaction. Effort is `low`, and `high` for the one call after
+  failed tests, an empty reply, an unparseable call or two tool errors in a row.
+- **Dialects**: `native` function calling; `xml`
+  (`<tool_call>{"name":…,"arguments":…}</tool_call>`, for qwen and glm); or
+  `json-block` (a fenced `{"tool":…,"args":…}` block, the fallback for other
+  families). For the text dialects the tool schemas are part of the fixed
+  system prompt and results come back in `<tool_result>` blocks.
+- **Repair** (every dialect): tool-name aliases (`Read`, `grep`, `shell`…),
+  argument aliases (`file_path`, `cmd`…), JSON repair (trailing commas, single
+  quotes, raw newlines, missing braces, Python literals), calls written as
+  text (`<tool_call>`, `<function=…>`, DeepSeek DSML `invoke`, GLM
+  `arg_key`, fenced or bare JSON), calls inside `<think>`. Each repair prints a
+  dim `repaired: …` line. `test/repair.js` runs the fixture table.
+- **Stream**: a reply cut off at `max_tokens` is continued (up to twice), and
+  quota errors (`daily`, `quota`, out of credits) stop at once with a clear
+  message instead of being retried.
+
 ## Context management
 
 - The system prompt and tool list never change, and every request is checked
@@ -181,12 +218,20 @@ Environment variables:
 | `config.json` | every parameter that affects output |
 | `scripts/setup.sh` | Node check and pinned Node install |
 | `test/smoke.js` | live smoke run on a buggy fixture |
+| `test/repair.js` | fixture table of malformed tool calls fed through the repair chain |
 | `src/cli.js` | entry point: modes, commands, task outcome |
 | `src/config.js` | loads and checks `config.json`, holds the working folder |
 | `src/workdir.js` | picks and opens the working folder |
 | `src/agent.js` | the agent loop, done-check and compaction trigger |
 | `src/model.js` | chat completions request, retries, stall watchdog |
 | `src/stream.js` | parses the streamed reply |
+| `src/model/prepare.js` | runs the probe, picks the dialect, prints the `probe:` line |
+| `src/model/probe.js`, `probe-cache.js` | model probe and its cache |
+| `src/model/adapter.js` | per-agent adapter: request options, reply repair, continuation, effort |
+| `src/model/dialects.js` | native, xml and json-block tool-call formats |
+| `src/model/repair.js`, `extract.js`, `json-repair.js` | the repair chain |
+| `src/model/reasoning.js` | reasoning field capture, echo, drop and effort policy |
+| `src/model/settings.js`, `errors.js` | `adapter.*` settings and quota errors |
 | `src/context.js` | token estimates, output truncation, compaction |
 | `src/checks.js` | finds and runs the project's tests |
 | `src/trace.js` | JSONL trace and cost |

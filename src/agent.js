@@ -1,5 +1,6 @@
 import { requestCompletion } from "./model.js";
-import { buildAssistantMessage } from "./stream.js";
+import { ModelAdapter } from "./model/adapter.js";
+import { dropReasoning } from "./model/reasoning.js";
 import { TOOL_DEFINITIONS, runToolCalls, summarizeToolArguments } from "./tools/index.js";
 import { compactMessages, estimateTokens, isPrefixStable, needsCompaction, truncateOutput } from "./context.js";
 import { findTestCommand, runDoneCheck, snapshotsDiffer, takeProjectSnapshot } from "./checks.js";
@@ -11,7 +12,7 @@ import { createReplyPrinter, writeDimLine, writeError, writeToolLine } from "./u
 const TOOL_TOKENS = estimateTokens(TOOL_DEFINITIONS);
 const MAX_NUDGES = CONFIG.agent.maxEmptyReplyNudges;
 const MAX_CHECK_ROUNDS = CONFIG.agent.maxCheckRounds;
-const NUDGE_MESSAGE = "Please continue.";
+const NUDGE_MESSAGE = "Your reply was empty. Continue the task: call a tool, or give your final answer.";
 const FILE_TOOLS = new Set(["read_file", "create_file", "write_file", "edit_file", "delete_file"]);
 const CHANGING_TOOLS = new Set(["create_file", "write_file", "edit_file", "delete_file", "bash"]);
 
@@ -21,6 +22,7 @@ export class Agent {
     this.trace = trace;
     this.doneCheckEnabled = true;
     this.systemMessage = null;
+    this.adapter = new ModelAdapter(config, TOOL_DEFINITIONS);
     this.reset();
   }
 
@@ -42,8 +44,12 @@ export class Agent {
       stats.turns = turn;
       if (this.trace.totals.cost >= this.config.maxSessionUsd) return this.stopForBudget(stats);
       const reply = await this.requestReply(signal, stats);
-      if (reply.toolCalls.length > 0) {
-        await this.runTools(reply.toolCalls, signal, task);
+      if (reply.followUp) {
+        this.messages.push({ role: "user", content: reply.followUp });
+        continue;
+      }
+      if (reply.calls.length > 0) {
+        await this.runTools(reply.calls, signal, task);
         continue;
       }
       const followUp = await this.findFollowUp(reply, signal, task);
@@ -57,8 +63,8 @@ export class Agent {
   loadSystemMessage() {
     if (this.systemMessage) return;
     const prompt = buildSessionPrompt();
-    this.systemMessage = prompt.message;
-    this.messages.unshift(prompt.message);
+    this.systemMessage = this.adapter.systemMessage(prompt.message.content);
+    this.messages.unshift(this.systemMessage);
     this.trace.recordPromptLoad(prompt.loaded);
     writeDimLine(describeLoadedContext(prompt.loaded));
   }
@@ -75,16 +81,17 @@ export class Agent {
     }
     const promptEstimate = this.estimateContextTokens();
     const startedAt = Date.now();
-    const reply = await requestCompletion({
+    const raw = await requestCompletion({
       config: this.config,
       messages: this.messages,
-      tools: TOOL_DEFINITIONS,
+      ...this.adapter.requestOptions(),
       handlers: createReplyPrinter(),
       signal,
       onRetry: (message) => writeDimLine(`[retry] ${message}`),
     });
-    this.messages.push(buildAssistantMessage(reply));
-    this.recordUsage(reply, promptEstimate, Date.now() - startedAt, stats);
+    const reply = this.adapter.readReply(raw);
+    this.messages.push(reply.message);
+    this.recordUsage(raw, promptEstimate, Date.now() - startedAt, stats);
     return reply;
   }
 
@@ -99,7 +106,8 @@ export class Agent {
 
   async runTools(calls, signal, task) {
     const results = await runToolCalls(calls, { signal });
-    for (const result of results) this.recordToolResult(result, task);
+    const recorded = results.map((result) => ({ ...result, content: this.recordToolResult(result, task) }));
+    this.messages.push(...this.adapter.resultMessages(recorded));
     signal.throwIfAborted();
   }
 
@@ -109,10 +117,10 @@ export class Agent {
     writeToolLine({ name: call.name, summary, status, output });
     const reason = status === "blocked" ? output : undefined;
     this.trace.recordToolCall({ name: call.name, args: summary, ms, bytes: Buffer.byteLength(content), status, reason });
-    this.messages.push({ role: "tool", tool_call_id: call.id, content });
-    if (status !== "ok") return;
+    if (status !== "ok") return content;
     if (FILE_TOOLS.has(call.name)) this.touchedFiles.add(call.args.path);
     if (CHANGING_TOOLS.has(call.name)) task.changedFiles = true;
+    return content;
   }
 
   async findFollowUp(reply, signal, task) {
@@ -123,7 +131,8 @@ export class Agent {
       return null;
     }
     task.nudges++;
-    writeDimLine("[empty reply; asking the model to continue]");
+    writeDimLine(`repaired: ${reply.reasoning ? "reasoning-only" : "empty"} reply → nudge`);
+    this.adapter.escalate("empty reply");
     return NUDGE_MESSAGE;
   }
 
@@ -143,19 +152,20 @@ export class Agent {
       return null;
     }
     task.checkRounds++;
+    this.adapter.escalate("tests failed");
     return check.failureMessage;
   }
 
   compactIfNeeded() {
     const before = this.estimateContextTokens();
     if (!needsCompaction(before, this.config.maxContextTokens)) return;
-    this.messages = compactMessages(this.messages, {
+    this.messages = dropReasoning(compactMessages(this.messages, {
       originalTask: this.originalTask,
       currentRequest: this.currentRequest,
       touchedFiles: this.touchedFiles,
       maxContextTokens: this.config.maxContextTokens,
       toolTokens: TOOL_TOKENS,
-    });
+    }));
     this.usageMark = null;
     const after = this.estimateContextTokens();
     writeDimLine(`[context compacted: ${before} → ${after} tokens]`);

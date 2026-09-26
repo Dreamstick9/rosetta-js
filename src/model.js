@@ -1,6 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { parseStream } from "./stream.js";
 import { CONFIG } from "./config.js";
+import { isQuotaError, quotaMessage } from "./model/errors.js";
 
 const MAX_RETRIES = CONFIG.retries.maxRetries;
 const MAX_STALL_RETRIES = CONFIG.retries.maxStallRetries;
@@ -38,11 +39,11 @@ function retryDelayMs(error, retries) {
   return BASE_BACKOFF_MS * 2 ** (retries - 1);
 }
 
-async function attemptCompletion({ config, messages, tools, handlers, signal }) {
+async function attemptCompletion({ config, messages, tools, extra, handlers, signal }) {
   const watchdog = new StallWatchdog(STALL_TIMEOUT_MS);
   try {
     const requestSignal = AbortSignal.any([signal, watchdog.signal]);
-    const response = await sendRequest(config, messages, tools, requestSignal);
+    const response = await sendRequest(config, messages, tools, extra, requestSignal);
     return await parseStream(response.body, { ...handlers, onData: () => watchdog.reset() });
   } catch (error) {
     throw describeFailure(error, watchdog.stalled, signal);
@@ -51,18 +52,18 @@ async function attemptCompletion({ config, messages, tools, handlers, signal }) 
   }
 }
 
-async function sendRequest(config, messages, tools, signal) {
+async function sendRequest(config, messages, tools, extra, signal) {
   const response = await fetch(`${config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${config.apiKey}` },
-    body: JSON.stringify(buildRequestBody(config, messages, tools)),
+    body: JSON.stringify(buildRequestBody(config, messages, tools, extra)),
     signal,
   });
   if (response.ok) return response;
   throw await createHttpError(response);
 }
 
-function buildRequestBody(config, messages, tools) {
+function buildRequestBody(config, messages, tools, extra) {
   const body = {
     model: config.model,
     messages,
@@ -74,11 +75,12 @@ function buildRequestBody(config, messages, tools) {
     stream_options: { include_usage: true },
   };
   if (config.seed !== null) body.seed = config.seed;
-  return body;
+  return { ...body, ...extra };
 }
 
 async function createHttpError(response) {
   const body = await response.text().catch(() => "");
+  if (isQuotaError(response.status, body)) return Object.assign(new Error(quotaMessage(response.status, body)), { retryable: false });
   const error = new Error(`API error ${response.status}: ${body.slice(0, 300)}`);
   error.retryable = response.status === 429 || response.status >= 500;
   const retryAfterMs = parseRetryAfter(response.headers.get("retry-after"));

@@ -3,6 +3,7 @@ import { CONFIG } from "./config.js";
 import { Agent } from "./agent.js";
 import { Trace } from "./trace.js";
 import { countChangedFiles, takeProjectSnapshot } from "./checks.js";
+import { prepareModel } from "./model/prepare.js";
 import { stopShell } from "./tools/shell.js";
 import { readHeadlessTask, readUserMessage, startTerminalInput, stopTerminalInput, watchForInterrupt } from "./input.js";
 import { writeCostSummary, writeDimLine, writeError, writeFooter, writeLine } from "./ui.js";
@@ -29,6 +30,7 @@ async function main() {
   if (!config.apiKey) exitWithError("AI_API_KEY is not set. Export it in your environment first.");
   process.on("exit", cleanUp);
   writeDimLine(describeModel(config));
+  await prepareModel(config);
   const args = process.argv.slice(2);
   const task = await readHeadlessTask(args);
   const problem = openWorkingFolder(task === null || parseTaskReference(task) !== null);
