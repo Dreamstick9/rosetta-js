@@ -5,7 +5,7 @@ import { compactMessages, estimateTokens, isPrefixStable, needsCompaction, trunc
 import { findTestCommand, runDoneCheck, snapshotsDiffer, takeProjectSnapshot } from "./checks.js";
 import { readTokenCounts } from "./trace.js";
 import { CONFIG } from "./config.js";
-import { createReplyPrinter, writeDimLine, writeError, writeToolLine } from "./ui.js";
+import { createReplyPrinter, writeDimLine, writeError, writeToolLine, writeToolStart } from "./ui.js";
 
 const SYSTEM_PROMPT = `You are a coding agent working in the user's project directory.
 Use the tools to inspect, change and test the project. Paths are relative to the project root, or absolute.
@@ -95,15 +95,15 @@ export class Agent {
   }
 
   async runTools(calls, signal, task) {
-    const results = await runToolCalls(calls, { signal });
-    for (const result of results) this.recordToolResult(result, task);
+    const onResult = (result) => this.recordToolResult(result, task);
+    await runToolCalls(calls, { signal, onStart: writeToolStart, onResult });
     signal.throwIfAborted();
   }
 
   recordToolResult({ call, output, status, ms }, task) {
     const content = truncateOutput(output);
     const summary = summarizeToolArguments(call.args);
-    writeToolLine({ name: call.name, summary, status, output });
+    writeToolLine({ id: call.id, name: call.name, args: call.args, summary, status, output });
     const reason = status === "blocked" ? output : undefined;
     this.trace.recordToolCall({ name: call.name, args: summary, ms, bytes: Buffer.byteLength(content), status, reason });
     this.messages.push({ role: "tool", tool_call_id: call.id, content });
@@ -144,8 +144,11 @@ export class Agent {
   }
 
   compactIfNeeded() {
+    if (needsCompaction(this.estimateContextTokens(), this.config.maxContextTokens)) this.compact();
+  }
+
+  compact() {
     const before = this.estimateContextTokens();
-    if (!needsCompaction(before, this.config.maxContextTokens)) return;
     this.messages = compactMessages(this.messages, {
       originalTask: this.originalTask,
       currentRequest: this.currentRequest,

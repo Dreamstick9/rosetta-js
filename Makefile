@@ -19,6 +19,7 @@ test: setup
 	@bash -n scripts/setup.sh
 	@echo "syntax check OK"
 	@AI_API_KEY=unused $(NODE) test/policy.js
+	@AI_API_KEY=unused $(NODE) test/tui.js
 	@$(NODE) $(ENV_FILE_FLAG) test/smoke.js
 
 clean:

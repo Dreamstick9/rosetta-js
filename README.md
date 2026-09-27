@@ -64,20 +64,62 @@ node /path/to/rosetta-js/src/cli.js                      # interactive
 node /path/to/rosetta-js/src/cli.js -p "Fix the failing test"
 ```
 
-## Commands and keys
+## Terminal UI
 
-| Input                       | Effect |
-| --------------------------- | ------ |
-| `/help`                     | show the commands |
-| `/new`                      | clear the conversation |
-| `/cost`                     | show the session cost, token totals and trace file |
-| `/check off`, `/check on`   | turn the test check after changes off or on |
-| `/exit`                     | quit |
-| Esc or Ctrl-C during a turn | stop the turn and return to the prompt |
-| Ctrl-C at the prompt        | quit |
-| ↑ / ↓ at the prompt         | bring back earlier messages |
+In a terminal, `make run` opens a full-screen-width TUI modelled on the Codex
+CLI: finished output goes into the normal scrollback, and a live area at the
+bottom holds the running work, a status line
+(`• Working (12s • esc to interrupt)`), the input box and a footer with key
+hints and how much context is left. `--plain` (or piped/headless input) keeps
+the simple line interface.
 
-Lines that start with `/` are never sent to the model.
+What it shows:
+
+- your message (`› …`), the agent's reply streamed as Markdown (`• …`)
+- `• Explored` groups for `read_file`, `list_files` and `search`
+- `• Ran <command>` with the first and last lines of output (red when the exit code is not 0)
+- `• Edited <file> (+a -d)` / `• Added` / `• Deleted` with a line-numbered diff
+- `• Blocked …` with the policy reason, `• Ran tests …` for the done-check,
+  retries, compaction notices and a `─ Worked for 6s · $0.0002 · … ─` line per task
+- the model's reasoning headline in the status line; the full reasoning in the transcript (Ctrl-T)
+
+| Command       | Effect |
+| ------------- | ------ |
+| `/model`      | pick a model from `{baseUrl}/models` (cost reporting keeps `pricing.*` from `config.json`) |
+| `/approvals`  | switch the safety policy between `standard` and full access (`off`) |
+| `/new`        | clear the conversation |
+| `/compact`    | compact the conversation now |
+| `/diff`       | show `git diff` against HEAD, including untracked files |
+| `/mention`    | insert `@` to pick a file |
+| `/status`     | model, endpoint, folder, policy, test check, limits, trace, cost, tokens, context |
+| `/cost`       | session cost, token totals and trace file |
+| `/check [on\|off]` | toggle the test check after changes |
+| `/help`       | commands and keys |
+| `/quit`, `/exit` | quit |
+
+Typing `/` opens the command list and `@` opens a fuzzy file search; ↑/↓ choose,
+Tab completes, Enter runs or inserts, Esc closes. Model and policy changes are
+recorded in the trace as `setting` lines.
+
+| Key | Effect |
+| --- | ------ |
+| Enter | send; while a task runs the message is queued (`↳ …`) and sent afterwards |
+| Shift-Enter, Ctrl-J | newline |
+| Esc | interrupt the running task (queued messages return to the input) |
+| Ctrl-C | interrupt, clear the input, or quit when pressed twice |
+| Ctrl-D | quit when the input is empty |
+| ↑ / ↓ | move between lines, then through earlier messages |
+| Ctrl-T | transcript overlay (↑/↓, PgUp/PgDn, Home/End, q) |
+| Ctrl-L | clear the screen |
+| Ctrl-A/E, Ctrl-U/K, Ctrl-W, Alt-←/→ | line and word editing |
+
+Pastes of 1000 characters or more show as `[Pasted Content N chars]` and are
+sent in full. With `exitAfterTask: true` (the judge flow) the TUI exits after
+the first task; `--chat` keeps it open. Lines that start with `/` are never
+sent to the model.
+
+The plain interface (`--plain`) keeps the original commands: `/help`, `/new`,
+`/cost`, `/check on|off`, `/exit`.
 
 ## Configuration
 
@@ -181,6 +223,7 @@ Environment variables:
 | `config.json` | every parameter that affects output |
 | `scripts/setup.sh` | Node check and pinned Node install |
 | `test/smoke.js` | live smoke run on a buggy fixture |
+| `test/tui.js` | checks for TUI text layout, diff, keys and composer |
 | `src/cli.js` | entry point: modes, commands, task outcome |
 | `src/config.js` | loads and checks `config.json`, holds the working folder |
 | `src/workdir.js` | picks and opens the working folder |
@@ -191,5 +234,8 @@ Environment variables:
 | `src/checks.js` | finds and runs the project's tests |
 | `src/trace.js` | JSONL trace and cost |
 | `src/input.js` | terminal line editor, paste handling, piped input |
-| `src/ui.js` | terminal output |
+| `src/ui.js` | terminal output; routes events to the TUI when it runs |
+| `src/tui/app.js` | the TUI: live area, rendering, keys, slash commands, transcript |
+| `src/tui/cells.js` | history cells (messages, commands, diffs, status box) |
+| `src/tui/*.js` | text layout, Markdown, diff, key parser, composer, pickers, file search, git diff |
 | `src/tools/*.js` | file, search and bash tools |

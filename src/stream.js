@@ -57,7 +57,7 @@ function applyDelta(reply, delta, handlers) {
   if (reasoning) {
     reply.reasoning += reasoning.text;
     reply.reasoningField ??= reasoning.field;
-    handlers.onReasoning();
+    handlers.onReasoning(reasoning.text);
   }
   for (const part of delta.tool_calls ?? []) addToolCallPart(reply.toolCalls, part);
 }

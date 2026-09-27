@@ -13,11 +13,11 @@ export const TOOL_DEFINITIONS = TOOLS.map((tool) => tool.definition);
 export async function runToolCalls(calls, context) {
   const results = [];
   for (const batch of groupReadOnlyCalls(calls)) {
-    if (context.signal.aborted) {
-      results.push(...batch.map((call) => ({ call, output: INTERRUPTED_RESULT, status: "error", ms: 0 })));
-      continue;
-    }
-    results.push(...(await Promise.all(batch.map((call) => runToolCall(call, context)))));
+    const batchResults = context.signal.aborted
+      ? batch.map((call) => ({ call, output: INTERRUPTED_RESULT, status: "error", ms: 0 }))
+      : await Promise.all(batch.map((call) => runToolCall(call, context)));
+    for (const result of batchResults) context.onResult?.(result);
+    results.push(...batchResults);
   }
   return results;
 }
@@ -45,6 +45,7 @@ async function runToolCall(call, context) {
     checkArguments(tool.definition.function, call.args);
     const blockedReason = checkToolCall(call.name, call.args, getShellCwd());
     if (blockedReason) return { call, output: describeBlock(blockedReason), status: "blocked", ms: 0 };
+    context.onStart?.(call);
     const output = await tool.run(call.args, context);
     return { call, output, status: "ok", ms: Date.now() - startedAt };
   } catch (error) {

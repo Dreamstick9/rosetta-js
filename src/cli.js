@@ -6,7 +6,8 @@ import { Trace } from "./trace.js";
 import { countChangedFiles, takeProjectSnapshot } from "./checks.js";
 import { stopShell } from "./tools/shell.js";
 import { readPipedInput, readUserMessage, startTerminalInput, stopTerminalInput, watchForInterrupt } from "./input.js";
-import { writeCostSummary, writeDimLine, writeError, writeFooter, writeLine } from "./ui.js";
+import { setUiSink, writeCostSummary, writeDimLine, writeError, writeFooter, writeInterrupted, writeLine } from "./ui.js";
+import { Tui } from "./tui/app.js";
 import { openWorkingFolder } from "./workdir.js";
 
 const HELP = `Commands:
@@ -26,15 +27,23 @@ async function main() {
   const config = CONFIG;
   if (!config.apiKey) exitWithError("AI_API_KEY is not set. Export it in your environment first.");
   process.on("exit", cleanUp);
-  writeDimLine(describeModel(config));
+  const args = process.argv.slice(2);
+  const tui = wantsTui(args) ? new Tui() : null;
+  if (!tui) writeDimLine(describeModel(config));
   const problem = openWorkingFolder();
   if (problem) exitWithError(problem);
   const trace = new Trace(config);
-  const args = process.argv.slice(2);
   const prompt = readPromptArgument(args) ?? readIssueVariable();
   if (prompt !== null) return runHeadless(config, trace, prompt);
   if (!process.stdin.isTTY) return runHeadless(config, trace, await readPipedInput());
-  return runInteractive(config, trace, args.includes("--chat") || !config.exitAfterTask);
+  const keepChatting = args.includes("--chat") || !config.exitAfterTask;
+  if (tui) return runTui(tui, config, trace, keepChatting);
+  return runInteractive(config, trace, keepChatting);
+}
+
+function wantsTui(args) {
+  const headless = readPromptArgument(args) !== null || Boolean(process.env.ISSUE);
+  return !headless && !args.includes("--plain") && process.stdin.isTTY && process.stdout.isTTY;
 }
 
 function describeModel(config) {
@@ -59,6 +68,12 @@ async function runHeadless(config, trace, task) {
   if (!task.trim()) exitWithError('Usage: node src/cli.js -p "task"   (or pipe the task on stdin, or set ISSUE)');
   const agent = new Agent({ config, trace });
   await runTask(agent, trace, task, new AbortController().signal);
+  finishSession(trace);
+}
+
+async function runTui(tui, config, trace, keepChatting) {
+  const agent = new Agent({ config, trace });
+  await tui.run({ agent, trace, keepChatting, runTask: (text, signal) => runTask(agent, trace, text, signal) });
   finishSession(trace);
 }
 
@@ -103,7 +118,7 @@ async function runTask(agent, trace, text, signal) {
     if (result.outcome !== "done") writeError(`Outcome: ${result.outcome}`);
     lastStatus = result.outcome;
   } catch (error) {
-    if (signal.aborted) writeDimLine("[interrupted]");
+    if (signal.aborted) writeInterrupted();
     else writeError(`Error: ${error.message}`);
     lastStatus = signal.aborted ? "interrupted" : "error";
   }
@@ -140,6 +155,7 @@ function cleanUp() {
 }
 
 function exitWithError(message) {
+  setUiSink(null);
   writeError(message);
   process.exit(1);
 }
