@@ -1,4 +1,4 @@
-import { CONFIG } from "./config.js";
+import { CONFIG, PROJECT_ROOT } from "./config.js";
 import { findTestCommand, runDoneCheck, snapshotsDiffer, takeProjectSnapshot } from "./checks.js";
 import { writeDimLine, writeError } from "./ui.js";
 
@@ -117,7 +117,7 @@ async function checkWork(agent, loop, signal) {
   if (!filesChanged) return null;
   const testCommand = findTestCommand();
   if (!testCommand) return null;
-  const check = await runDoneCheck(testCommand, signal);
+  const check = await runDoneCheck(testCommand, signal, PROJECT_ROOT, agent.outputDirectory());
   attempt.noteCheck(check.passed, check.tail);
   loop.stall.noteCheck(check.passed, check.tail);
   if (check.passed) return null;

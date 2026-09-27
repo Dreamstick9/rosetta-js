@@ -1,0 +1,6 @@
+- Write or extend a test for the requested behavior first and see it fail for the right reason.
+- Implement the smallest change that makes it pass, then clean up with tests green.
+- Test behavior through the public API; cover edge cases named in the task (empty, None, bounds, errors).
+- Match the existing test layout, naming and fixtures.
+- Never weaken or delete existing tests to get green.
+- Run the full suite at the end.

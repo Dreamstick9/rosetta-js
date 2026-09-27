@@ -1,0 +1,6 @@
+- The shebang decides the shell: keep /bin/sh scripts POSIX (no [[ ]], arrays, or `function`).
+- Quote every expansion ("$var", "$@"); use `read -r`; guard `cd dir || exit 1`.
+- With `set -euo pipefail`, handle commands that may fail on purpose (`|| true`) and unset variables (`${VAR:-}`).
+- Never `rm -rf "$x"/*` without checking $x is non-empty.
+- Reproduce with `bash -x script.sh ARGS`; syntax-check with `bash -n` (and shellcheck if installed).
+- Run the script's tests (bats or the project's test script) after changes.

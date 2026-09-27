@@ -112,6 +112,11 @@ naming the field, and there is no fallback to another model.
 | `adapter.reasoningEffort` | `reasoning_effort` sent normally (`""` sends none) |
 | `adapter.escalatedReasoningEffort` | effort for the one call after failed tests, an empty reply or repeated tool errors |
 | `adapter.probe` | probe the model at start (`false` assumes native tools) |
+| `skills.internal` | add short skill digests to the first task message (default `false`, see below) |
+| `skills.maxAuto` | most skills picked per task (one language skill, one task-type skill) |
+| `skills.detect` | also run the picked skill's project-scan script and add its first 12 lines (default `false`) |
+| `digest.enabled` | replace long test/compiler output with a skill summarizer's digest (default `true`) |
+| `digest.minLines` | output longer than this many lines is digested |
 
 The default pricing for `deepseek/deepseek-v4.1-flash` ($0.035 input, $0.001
 cached input, $0.29 output per million tokens) comes from the Hack Club
@@ -198,6 +203,52 @@ The harness adapts to whichever OpenAI-compatible model it is given
   quota errors (`daily`, `quota`, out of credits) stop at once with a clear
   message instead of being retried.
 
+## Skills and output digests
+
+`skills/` holds 16 skills copied from the Rosetta kits (see `skills/NOTICE`):
+a `SKILL.md`, a `DIGEST.md` of at most 8 lines, and python3-stdlib scripts.
+The harness applies them itself; the model is never asked to call them.
+
+- **Output digests** (`src/digest/`, on): when a `bash` result or the
+  done-check output of a noisy tool is longer than `digest.minLines`, the
+  matching summarizer runs on the saved output and the model gets its digest
+  (at most 40 lines) plus `[digest of N lines; full output: runs/<id>/out/N.txt (read_file if needed)]`.
+  The terminal shows `✂ digest: pytest 812 → 23 lines`. Summarizers:
+  pytest/unittest `pytest_failures.py`, `cargo test` `cargo_test_fail.py`,
+  cargo build/check `cargo_errors.py`, `go test` `go_test_fail.py`,
+  jest/vitest/mocha `js_test_failures.py`, tsc `tsc_summary.py`, gcc/clang
+  `cc_errors.py`, mvn/gradle `junit_fail.py`. A digest is used only when it at
+  least halves the output. Without python3, pytest and jest get a small
+  built-in JS digest; other tools keep the normal output.
+- **Skill router** (`src/skills-internal/`, off): scores skills by repo
+  markers (`pyproject.toml`, `package.json`, `Cargo.toml`, `*.go`…), task
+  keywords and task type (bug fix, refactor, performance, feature, upgrade),
+  picks at most `skills.maxAuto`, and appends their digests to the first user
+  message (never the cached prefix), printing `📖 skill: python-library, systematic-debugging`.
+  With `skills.detect` it also runs that skill's scan script (`crate_map.py`,
+  `go_map.py`, `detect_backend.py`, `jvm_detect.py`…, 10 s timeout, skipped
+  without python3).
+
+Measured on 4 tasks (Python bug with a 1,200-line pytest failure, a
+TypeScript model migration with a noisy tsc, a multi-file Python refactor, a
+Go test failure), 3 runs per arm, `deepseek/deepseek-v4.1-flash`, all 36 runs
+passing the hidden tests:
+
+| Arm | avg $ | avg input tokens | avg seconds |
+| --- | ----- | ---------------- | ----------- |
+| all off | 0.00200 | 130k | 38 |
+| skill digests + scan | 0.00221 | 154k | 79 |
+| scan only | 0.00248 | 131k | 40 |
+
+The digests made the model do extra work (reproduction scripts, regression
+tests) without better results, and the scan did not reduce exploration, so
+both stay off. Output digests never triggered there (the model pipes tests
+through `tail`), so they were measured where they do trigger: an
+under-specified variant of the Python task where the done-check fails with
+467+ lines. Digest on: $0.00167, 102k input, 80 s; off: $0.00263, 152k, 133 s
+(3 runs each, all passing). A 1,200-line pytest result goes from about 4,000
+to 500 tokens.
+
 ## Context management
 
 - The system prompt and tool list never change, and every request is checked
@@ -219,6 +270,8 @@ The harness adapts to whichever OpenAI-compatible model it is given
 | `scripts/setup.sh` | Node check and pinned Node install |
 | `test/smoke.js` | live smoke run on a buggy fixture |
 | `test/repair.js` | fixture table of malformed tool calls fed through the repair chain |
+| `test/skills-internal.js` | offline checks of the skill router and output digests |
+| `skills/*/` | skill guides, digests and summarizer scripts |
 | `src/cli.js` | entry point: modes, commands, task outcome |
 | `src/config.js` | loads and checks `config.json`, holds the working folder |
 | `src/workdir.js` | picks and opens the working folder |
@@ -238,3 +291,5 @@ The harness adapts to whichever OpenAI-compatible model it is given
 | `src/input.js` | terminal line editor, paste handling, piped input |
 | `src/ui.js` | terminal output |
 | `src/tools/*.js` | file, search and bash tools |
+| `src/skills-internal/*.js` | skill catalog, router, project scan, first-message notes |
+| `src/digest/*.js` | picks a summarizer for long output, runs it, JS fallback |

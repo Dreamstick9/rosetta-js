@@ -1,0 +1,6 @@
+- Read the real schema first (migrations, models or schema.sql) before writing queries.
+- Parameterize queries; never build SQL with string formatting from user input.
+- Reproduce query bugs against a small sqlite/in-memory DB with the same schema and seed.
+- Migrations: add new ones instead of editing applied ones; avoid destructive ops without defaults/backfill.
+- Watch NULL semantics in comparisons and joins, and N+1 queries in loops.
+- Wrap multi-step writes in a transaction; run the DB tests after changes.

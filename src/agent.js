@@ -1,3 +1,4 @@
+import path from "node:path";
 import { requestCompletion } from "./model.js";
 import { ModelAdapter } from "./model/adapter.js";
 import { dropReasoning } from "./model/reasoning.js";
@@ -7,6 +8,8 @@ import { readTokenCounts } from "./trace.js";
 import { buildSessionPrompt, describeLoadedContext } from "./prompt.js";
 import { TaskLoop } from "./attempts.js";
 import { describeUnresumable, loadSession } from "./session.js";
+import { addSkillNotes } from "./skills-internal/index.js";
+import { digestOutput } from "./digest/index.js";
 import { createReplyPrinter, writeDimLine, writeError, writeToolLine } from "./ui.js";
 
 const TOOL_TOKENS = estimateTokens(TOOL_DEFINITIONS);
@@ -34,7 +37,7 @@ export class Agent {
     this.loadSystemMessage();
     this.originalTask ??= userText;
     this.currentRequest = userText;
-    this.addUserMessage(userText);
+    this.addUserMessage(this.messages.length === 1 ? addSkillNotes(userText, this.config) : userText);
     return this.loop.runTask(userText, signal);
   }
 
@@ -106,7 +109,7 @@ export class Agent {
   }
 
   recordToolResult({ call, output, status, ms }) {
-    const content = truncateOutput(output);
+    const content = truncateOutput(call.name === "bash" ? digestOutput(call.args.command, output, this.outputDirectory()) : output);
     const summary = summarizeToolArguments(call.args);
     writeToolLine({ name: call.name, summary, status, output });
     const reason = status === "blocked" ? output : undefined;
@@ -135,6 +138,10 @@ export class Agent {
     const after = this.estimateContextTokens();
     writeDimLine(`[context compacted${forceSummary ? " at a plan milestone" : ""}: ${before} → ${after} tokens]`);
     this.trace.recordCompaction({ before, after });
+  }
+
+  outputDirectory() {
+    return this.trace.file && path.join(path.dirname(this.trace.file), "out");
   }
 
   estimateContextTokens() {

@@ -1,0 +1,6 @@
+- Reproduce first: run the one failing test (`python3 -m pytest -q path::test -x`) or a `python3 -c` snippet; read the traceback bottom-up to the first frame in the package.
+- Fix the root cause in the repo source (not site-packages); keep public names, argument order and defaults stable.
+- Raise specific exceptions with clear messages; never swallow errors or return None silently.
+- Watch for mutable default args, shared class attributes, exhausted iterators, int vs float division, dict/set ordering.
+- No network: do not pip install; for a src/ layout use `PYTHONPATH=src`.
+- Add a regression test next to the module's tests, then run the whole suite.

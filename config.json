@@ -63,7 +63,10 @@
     "maxInstructionTokens": 4000,
     "maxCatalogSkills": 40,
     "maxDescriptionChars": 150,
-    "maxSkillFiles": 50
+    "maxSkillFiles": 50,
+    "internal": false,
+    "maxAuto": 2,
+    "detect": false
   },
   "intake": {
     "maxComments": 20,
@@ -86,5 +89,9 @@
     "fanOutMinFiles": 4,
     "autoTournament": true,
     "tournamentSize": 2
+  },
+  "digest": {
+    "enabled": true,
+    "minLines": 60
   }
 }

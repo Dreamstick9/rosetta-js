@@ -1,0 +1,6 @@
+- Use the project's build system (cmake/make/meson) and its test target; build before testing.
+- Fix the first compiler error per file; for "undefined reference" check the source is in the build target and the declaration matches.
+- Memory bugs: check bounds, lifetimes and ownership; build with -fsanitize=address,undefined to confirm when unsure.
+- Keep headers and ABI stable: signatures, struct layouts, include guards.
+- Do not silence warnings with casts; fix the type.
+- Rebuild from clean if headers changed, then run the full test suite.

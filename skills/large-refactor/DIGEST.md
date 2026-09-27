@@ -1,0 +1,6 @@
+- Map every reference before editing: `grep -rnw NAME .` (definitions, imports, re-exports, tests, docs, string uses).
+- Keep behavior identical: run the tests before you start and after each step.
+- Change in small steps: add the new code, move callers over, then delete the old code; keep old names as aliases only if outside callers need them.
+- Update imports, `__init__`/index re-exports and type hints in the same step as the move.
+- Do not mix behavior changes or reformatting into the refactor.
+- Finish with a grep for the old name (expect zero hits) and the full test suite.

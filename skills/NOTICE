@@ -1,0 +1,15 @@
+skills/ (copied from the Rosetta kits, MIT)
+
+Each folder holds a SKILL.md, a short DIGEST.md that the harness adds to the
+first task message, and python3-stdlib helper scripts. All were written for
+Rosetta; `kit_run` references were rewritten to plain `python3 skills/...`.
+
+tdd, systematic-debugging, verification-before-completion, large-refactor
+  The choice of methodologies follows the "superpowers" skill collection by
+  Jesse Vincent (obra/superpowers, MIT License). No text or code was copied:
+  the kits and their scripts were written for Rosetta. The kit format is
+  compatible with Agent Skills (agentskills.io, Apache-2.0).
+
+No kit copied here uses text adapted from K-Dense-AI/scientific-agent-skills
+(MIT); those adaptations live only in the data-analysis, data-viz and
+scientific-computing kits, which are not included.

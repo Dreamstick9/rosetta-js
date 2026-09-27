@@ -1,0 +1,4 @@
+- Before saying done, run the full test suite and read the result.
+- Re-read the task and check every requested point is handled.
+- Scan the diff for debug prints, TODOs, skipped tests and stray files; remove them.
+- Report exactly what changed and what was verified.
