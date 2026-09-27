@@ -45,12 +45,14 @@ function describeZoneProblem(target, real, root) {
   return `${target} is outside the working folder and /tmp`;
 }
 
-export function describeWriteProblem(target, root = PROJECT_ROOT) {
+export function describeWriteProblem(target, root = PROJECT_ROOT, readOnly = false) {
   if (DEVICE_FILES.has(target) || target.startsWith("/dev/fd/")) return null;
+  if (readOnly) return `it writes ${target}, and this agent is read-only`;
   return describeZoneProblem(target, canonicalPath(target), root);
 }
 
-export function describeDeleteProblem(target, recursive, root = PROJECT_ROOT) {
+export function describeDeleteProblem(target, recursive, root = PROJECT_ROOT, readOnly = false) {
+  if (readOnly) return `it deletes ${target}, and this agent is read-only`;
   const real = canonicalPath(target);
   if (recursive && real === canonicalPath(root)) return `it would delete the whole working folder ${real}`;
   if (recursive && real === HOME) return "it would delete your home folder";

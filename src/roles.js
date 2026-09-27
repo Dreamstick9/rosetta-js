@@ -3,12 +3,14 @@ import { CONFIG } from "./config.js";
 const AGENTS = CONFIG.agents;
 const READING_TOOLS = ["list_files", "read_file", "search", "bash"];
 const ALL_TOOLS = ["list_files", "read_file", "create_file", "write_file", "edit_file", "delete_file", "search", "bash", "skill"];
+const MAIN_TOOLS = [...ALL_TOOLS, "todo", "give_up", "task"];
 
 export const ROLES = {
   main: {
     name: "main",
     prompt: "You are the main agent. You own the task from start to finish.",
-    tools: ALL_TOOLS,
+    tools: MAIN_TOOLS,
+    readOnly: false,
     maxTurns: CONFIG.maxTurns,
     maxUsd: CONFIG.maxSessionUsd,
     enabled: true,
@@ -21,6 +23,7 @@ export const ROLES = {
       "Finish with a short list of findings: file paths, line numbers and the facts that answer the question.",
     ].join("\n"),
     tools: READING_TOOLS,
+    readOnly: true,
     maxTurns: AGENTS.explorerMaxTurns,
     maxUsd: AGENTS.explorerMaxUsd,
     enabled: true,
@@ -33,6 +36,7 @@ export const ROLES = {
       "Finish with one short paragraph: what you changed, which files, and how you checked it.",
     ].join("\n"),
     tools: ALL_TOOLS,
+    readOnly: false,
     maxTurns: AGENTS.workerMaxTurns,
     maxUsd: AGENTS.workerMaxUsd,
     enabled: true,
@@ -45,6 +49,7 @@ export const ROLES = {
       "Then list the concrete problems, most important first, with file paths.",
     ].join("\n"),
     tools: READING_TOOLS,
+    readOnly: true,
     maxTurns: AGENTS.reviewerMaxTurns,
     maxUsd: AGENTS.reviewerMaxUsd,
     enabled: AGENTS.reviewerEnabled,
@@ -60,4 +65,9 @@ export function describeToolRefusal(roleName, toolName) {
   if (!roleName) return null;
   if (getRole(roleName).tools.includes(toolName)) return null;
   return `tool ${toolName} is not available to the ${roleName} role`;
+}
+
+export function isReadOnlyRole(roleName) {
+  if (!roleName) return false;
+  return getRole(roleName).readOnly;
 }

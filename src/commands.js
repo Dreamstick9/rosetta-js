@@ -1,9 +1,10 @@
 import os from "node:os";
 import path from "node:path";
-import { buildChildEnvironment, isSecretVariableName } from "./environment.js";
+import { buildChildEnvironment, describeSecretPrint, isSecretVariableName } from "./environment.js";
 import { describeDeleteProblem, describeReadProblem, describeWriteProblem } from "./paths.js";
 import { parseShell } from "./shellwords.js";
 import { checkGitCommand, checkGhCommand } from "./gitrules.js";
+import { checkReadOnlyCommand } from "./readonly.js";
 
 const MAX_DEPTH = 4;
 const SHELL_ENVIRONMENT = buildChildEnvironment();
@@ -16,20 +17,20 @@ const WRITING_REDIRECTS = new Set([">", ">>", ">|", "&>", "&>>", "<>"]);
 const OUTPUT_FLAGS = new Set(["-o", "--output", "-O", "--output-document", "-P"]);
 const FILE_DESCRIPTOR_PATTERN = /^(\d+|-)$/;
 
-export function checkCommandLine(commandLine, cwd, root, depth = 0) {
+export function checkCommandLine(commandLine, cwd, root, depth = 0, readOnly = false) {
   if (depth > MAX_DEPTH) return "the command nests shells too deeply to check";
   const parsed = parseShell(commandLine, SHELL_ENVIRONMENT);
   const secret = parsed.variables.find(isSecretVariableName);
   if (secret) return `it reads the secret variable $${secret}`;
   for (const substitution of parsed.substitutions) {
-    const reason = checkCommandLine(substitution, cwd, root, depth + 1);
+    const reason = checkCommandLine(substitution, cwd, root, depth + 1, readOnly);
     if (reason) return reason;
   }
   let currentCwd = cwd;
   for (const command of parsed.commands) {
     const words = stripPrefixWords(command.words);
-    const place = { cwd: currentCwd, root };
-    const reason = checkRedirects(command.redirects, place) ?? checkWords(words, place) ?? checkCommand(words, command, place, depth);
+    const place = { cwd: currentCwd, root, readOnly };
+    const reason = checkRedirects(command.redirects, place) ?? checkWords(words, place) ?? checkReadOnlyCommand(words, place) ?? checkCommand(words, command, place, depth);
     if (reason) return reason;
     currentCwd = nextCwd(words, currentCwd);
   }
@@ -48,7 +49,7 @@ function checkRedirects(redirects, place) {
     if (op === "<<<") continue;
     if ((op === ">&" || op === "<&") && FILE_DESCRIPTOR_PATTERN.test(target)) continue;
     const absolute = path.resolve(place.cwd, target);
-    const reason = WRITING_REDIRECTS.has(op) || op === ">&" ? describeWriteProblem(absolute, place.root) : describeReadProblem(absolute, place.root);
+    const reason = WRITING_REDIRECTS.has(op) || op === ">&" ? describeWriteProblem(absolute, place.root, place.readOnly) : describeReadProblem(absolute, place.root);
     if (reason) return reason;
   }
   return null;
@@ -77,8 +78,8 @@ function checkCommand(words, command, place, depth) {
   if (name === "find") return checkFind(args, place);
   if (name === "git") return checkGitCommand(args);
   if (name === "gh") return checkGhCommand(args);
-  if (name === "printenv") return checkPrintenv(args);
-  if (name === "eval") return checkCommandLine(args.join(" "), place.cwd, place.root, depth + 1);
+  if (name === "printenv") return describeSecretPrint(args);
+  if (name === "eval") return checkCommandLine(args.join(" "), place.cwd, place.root, depth + 1, place.readOnly);
   if (SHELLS.has(name)) return checkShellCommand(args, command, place, depth);
   return null;
 }
@@ -103,7 +104,7 @@ function flagValues(args, flags) {
 
 function checkDeletes(targets, place, recursive) {
   for (const target of targets) {
-    const reason = describeDeleteProblem(path.resolve(place.cwd, target), recursive, place.root);
+    const reason = describeDeleteProblem(path.resolve(place.cwd, target), recursive, place.root, place.readOnly);
     if (reason) return reason;
   }
   return null;
@@ -111,7 +112,7 @@ function checkDeletes(targets, place, recursive) {
 
 function checkWrites(targets, place) {
   for (const target of targets) {
-    const reason = describeWriteProblem(path.resolve(place.cwd, target), place.root);
+    const reason = describeWriteProblem(path.resolve(place.cwd, target), place.root, place.readOnly);
     if (reason) return reason;
   }
   return null;
@@ -125,17 +126,11 @@ function checkFind(args, place) {
   return checkDeletes(roots.length > 0 ? roots : ["."], place, true);
 }
 
-function checkPrintenv(args) {
-  if (args.length === 0) return null;
-  const secret = args.find(isSecretVariableName);
-  return secret ? `it prints the secret variable ${secret}` : null;
-}
-
 function checkShellCommand(args, command, place, depth) {
   const flagIndex = args.findIndex((arg) => /^-\w*c$/.test(arg));
-  if (flagIndex !== -1) return checkCommandLine(args[flagIndex + 1] ?? "", place.cwd, place.root, depth + 1);
+  if (flagIndex !== -1) return checkCommandLine(args[flagIndex + 1] ?? "", place.cwd, place.root, depth + 1, place.readOnly);
   for (const body of command.heredocBodies) {
-    const reason = checkCommandLine(body, place.cwd, place.root, depth + 1);
+    const reason = checkCommandLine(body, place.cwd, place.root, depth + 1, place.readOnly);
     if (reason) return reason;
   }
   return null;

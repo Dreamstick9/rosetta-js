@@ -43,8 +43,12 @@ export function createReplyPrinter() {
   };
 }
 
-export function writeToolLine({ name, summary, status, output }) {
-  const parts = [`  ${TOOL_MARKS[status]} ${name}`];
+export function createQuietPrinter() {
+  return { onText() {}, onReasoning() {} };
+}
+
+export function writeToolLine({ name, summary, status, output, label }) {
+  const parts = [label ? `  [${label}] ${TOOL_MARKS[status]} ${name}` : `  ${TOOL_MARKS[status]} ${name}`];
   if (summary) parts.push(summary);
   if (status !== "ok") parts.push(`— ${firstLine(output)}`);
   writeDimLine(parts.join(" "));
@@ -65,14 +69,20 @@ export function writeFooter({ cost, seconds, inputTokens, cachedTokens, outputTo
   writeDimLine(parts.join(" · "));
 }
 
-export function writeCostSummary(totals, traceFile) {
+export function writeCostSummary(totals, traceFile, roles) {
   const lines = [
     `Session cost: $${totals.cost.toFixed(4)}`,
     `Model calls: ${totals.modelCalls} · tool calls: ${totals.toolCalls}`,
     `Tokens: in ${totals.inputTokens} · cached ${totals.cachedTokens} (${cachePercent(totals.cachedTokens, totals.inputTokens)}%) · out ${totals.outputTokens}`,
-    `Trace: ${traceFile ?? "(nothing recorded yet)"}`,
   ];
+  for (const [role, usage] of roles) lines.push(describeRoleUsage(role, usage));
+  lines.push(`Trace: ${traceFile ?? "(nothing recorded yet)"}`);
   writeLine(lines.join("\n"));
+}
+
+function describeRoleUsage(role, usage) {
+  const tokens = `in ${usage.inputTokens} · cached ${usage.cachedTokens} · out ${usage.outputTokens}`;
+  return `  ${role.padEnd(9)} calls ${usage.modelCalls} · ${tokens} · $${usage.cost.toFixed(4)}`;
 }
 
 function cachePercent(cachedTokens, inputTokens) {

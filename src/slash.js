@@ -8,6 +8,7 @@ const HELP = `Commands:
   /check off    stop running the tests after changes (/check on turns it back on)
   /diff         show what changed since the session started
   /undo         put the files back to the previous checkpoint
+  /best-of N task  run N workers on the task in parallel and merge the best
   /resume       continue the task saved in .rosetta/session.json
   /exit         quit
 Esc or Ctrl-C stops the current turn. Ctrl-C at the prompt quits.`;
@@ -16,9 +17,15 @@ export function isCommand(text) {
   return text.startsWith("/") && !text.includes("\n");
 }
 
+export function parseBestOf(text) {
+  const match = /^\/best-of\s+(\d+)\s+(\S[\s\S]*)$/.exec(text.trim());
+  if (!match || Number(match[1]) < 1) return null;
+  return { size: Number(match[1]), task: match[2] };
+}
+
 export function handleCommand(agent, trace, command) {
   if (command === "/help") return writeLine(HELP);
-  if (command === "/cost") return writeCostSummary(trace.totals, trace.file);
+  if (command === "/cost") return writeCostSummary(trace.totals, trace.file, trace.shared.roles);
   if (command === "/new") {
     agent.reset();
     return writeDimLine("Conversation cleared.");

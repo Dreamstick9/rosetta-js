@@ -1,21 +1,18 @@
 #!/usr/bin/env node
 import { CONFIG } from "./config.js";
-import { Agent } from "./agent.js";
 import { Trace } from "./trace.js";
 import { countChangedFiles, takeProjectSnapshot } from "./checks.js";
 import { stopShell } from "./tools/shell.js";
-import { readHeadlessTask, readUserMessage, startTerminalInput, stopTerminalInput, watchForInterrupt } from "./input.js";
+import { readBestOfSize, readHeadlessTask, readUserMessage, startTerminalInput, stopTerminalInput, watchForInterrupt } from "./input.js";
 import { writeDimLine, writeError, writeFooter } from "./ui.js";
-import { handleCommand, isCommand } from "./slash.js";
+import { handleCommand, isCommand, parseBestOf } from "./slash.js";
 import { openWorkingFolder } from "./workdir.js";
-import { runIntake } from "./intake/index.js";
 import { parseTaskReference } from "./intake/parse.js";
+import { chooseTaskStart, createMainAgent, readSessionSnapshot, resumeTask, startBestOf, startTask } from "./taskstart.js";
 
 const EXIT_CODES = { done: 0, max_turns: 3, budget: 3 };
 const SESSION_STARTED_AT = Date.now();
 
-let sessionSnapshot = null;
-let firstTaskStarted = false;
 let lastStatus = "no_task";
 
 async function main() {
@@ -30,7 +27,7 @@ async function main() {
   if (problem) exitWithError(problem);
   const trace = new Trace(config);
   if (resuming) return runHeadlessResume(config, trace);
-  if (task !== null) return runHeadless(config, trace, task);
+  if (task !== null) return runHeadless(config, trace, task, readBestOfSize(args));
   return runInteractive(config, trace, args.includes("--chat") || !config.exitAfterTask);
 }
 
@@ -39,21 +36,23 @@ function describeModel(config) {
   return `Model: ${config.model} at ${config.baseUrl}${overrides} · policy ${config.policy}`;
 }
 
-async function runHeadless(config, trace, task) {
-  if (!task.trim()) exitWithError('Usage: node src/cli.js -p "task"   (or pipe the task on stdin, or set ISSUE)');
-  const agent = new Agent({ config, trace });
-  await runTask(trace, new AbortController().signal, (signal) => startTask(agent, trace, task, signal));
+async function runHeadless(config, trace, task, bestOfSize) {
+  if (!task.trim()) exitWithError('Usage: node src/cli.js -p "task" [--best-of N]   (or pipe the task on stdin, or set ISSUE)');
+  if (bestOfSize === undefined) exitWithError("--best-of needs a whole number of workers, 1 or more.");
+  const agent = createMainAgent(config, trace);
+  const start = bestOfSize ? (signal) => startBestOf(agent, trace, { size: bestOfSize, task }, signal) : (signal) => startTask(agent, trace, task, signal);
+  await runTask(trace, new AbortController().signal, start);
   finishSession(trace);
 }
 
 async function runHeadlessResume(config, trace) {
-  const agent = new Agent({ config, trace });
+  const agent = createMainAgent(config, trace);
   await runTask(trace, new AbortController().signal, (signal) => resumeTask(agent, signal));
   finishSession(trace);
 }
 
 async function runInteractive(config, trace, keepChatting) {
-  const agent = new Agent({ config, trace });
+  const agent = createMainAgent(config, trace);
   startTerminalInput();
   writeDimLine(keepChatting ? "Type /help for commands." : "Type or paste the task and press Enter. /help lists commands.");
   while (true) {
@@ -61,12 +60,11 @@ async function runInteractive(config, trace, keepChatting) {
     if (input === null || input.trim() === "/exit") break;
     const text = input.trim();
     if (!text) continue;
-    if (isCommand(text) && text !== "/resume") {
+    if (isCommand(text) && text !== "/resume" && !parseBestOf(text)) {
       handleCommand(agent, trace, text);
       continue;
     }
-    const start = text === "/resume" ? (signal) => resumeTask(agent, signal) : (signal) => startTask(agent, trace, input, signal);
-    await runInteractiveTask(trace, start);
+    await runInteractiveTask(trace, chooseTaskStart(agent, trace, input));
     if (!keepChatting) break;
   }
   finishSession(trace);
@@ -77,16 +75,6 @@ async function runInteractiveTask(trace, start) {
   const stopWatching = watchForInterrupt(() => controller.abort());
   await runTask(trace, controller.signal, start);
   stopWatching();
-}
-
-async function startTask(agent, trace, text, signal) {
-  const task = await prepareFirstTask(trace, text, signal);
-  return agent.runTask(task, signal);
-}
-
-async function resumeTask(agent, signal) {
-  markFirstTask();
-  return agent.resumeTask(signal);
 }
 
 async function runTask(trace, signal, start) {
@@ -105,20 +93,8 @@ async function runTask(trace, signal, start) {
   }
 }
 
-async function prepareFirstTask(trace, text, signal) {
-  if (firstTaskStarted) return text;
-  const task = await runIntake(text, trace, signal);
-  markFirstTask();
-  return task;
-}
-
-function markFirstTask() {
-  if (firstTaskStarted) return;
-  firstTaskStarted = true;
-  sessionSnapshot = takeProjectSnapshot();
-}
-
 function finishSession(trace) {
+  const sessionSnapshot = readSessionSnapshot();
   const summary = {
     status: lastStatus,
     cost: Number(trace.totals.cost.toFixed(6)),

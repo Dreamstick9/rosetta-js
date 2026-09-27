@@ -7,6 +7,7 @@ const SHOWN_GOAL_CHARS = 100;
 const FAILING_LINES = 15;
 const SHOWN_FAILING_LINES = 8;
 const MAX_ERRORS = 3;
+const LESSONS_SCANNED = 200;
 const OUTCOME_HINTS = {
   max_turns: "It ran out of turns: read what you need in one go and make the edits in fewer steps.",
   stalled: "It stopped making progress: try a different hypothesis.",
@@ -25,6 +26,34 @@ export function buildLesson({ task, attempt, outcome, diffStat, failingOutput, e
     lastErrors: errors.slice(-MAX_ERRORS),
     approaches: { filesEdited: [...editedFiles], tools: Object.fromEntries(toolCounts) },
   };
+}
+
+export function recordAttemptLesson(loop, attempt, endRef) {
+  const lesson = buildLesson({
+    task: loop.task,
+    attempt: attempt.number,
+    outcome: attempt.outcome,
+    diffStat: loop.checkpoints.diffStat(attempt.startRef, endRef),
+    failingOutput: attempt.lastFailure,
+    errors: attempt.errors,
+    editedFiles: attempt.editedFiles,
+    toolCounts: attempt.toolCounts,
+  });
+  appendLesson(lesson);
+  loop.taskLessons.push(lesson);
+  loop.trace.recordLesson({ attempt: attempt.number, outcome: attempt.outcome, diffStat: lesson.diffStat });
+}
+
+export function findLessonsAbout(files, count) {
+  if (files.length === 0 || count <= 0) return [];
+  const names = files.map((file) => file.split("/").at(-1));
+  const related = readRecentLessons(LESSONS_SCANNED).filter((lesson) => mentionsAny(lesson, names));
+  return related.slice(-count);
+}
+
+function mentionsAny(lesson, names) {
+  const text = `${lesson.goal} ${lesson.approaches.filesEdited.join(" ")}`;
+  return names.some((name) => text.includes(name));
 }
 
 export function appendLesson(lesson) {

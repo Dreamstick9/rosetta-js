@@ -22,6 +22,7 @@ const AGENT_NUMBER_FIELDS = [
   "agents.maxParallelAgents", "agents.explorerMaxTurns", "agents.workerMaxTurns", "agents.reviewerMaxTurns",
   "agents.explorerMaxUsd", "agents.workerMaxUsd", "agents.reviewerMaxUsd",
   "agents.fanOutMinItems", "agents.fanOutMinFiles", "agents.tournamentSize",
+  "agents.maxResultLines", "agents.maxResultLineChars", "agents.lessonsPerAgent",
 ];
 const BOOLEAN_FIELDS = ["exitAfterTask", "agents.reviewerEnabled", "agents.autoTournament"];
 

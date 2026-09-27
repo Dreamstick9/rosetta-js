@@ -2,27 +2,44 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PROJECT_ROOT } from "./config.js";
+import { addModelCall, calculateCost, createUsage } from "./usage.js";
 
-const TOKENS_PER_MILLION = 1_000_000;
 const RUNS_DIRECTORY = fileURLToPath(new URL("../runs/", import.meta.url));
+const MAIN_AGENT = { id: "main", role: "main" };
 
 export class Trace {
-  constructor(config) {
+  constructor(config, agent = MAIN_AGENT, shared = { file: null, totals: createUsage(), roles: new Map() }) {
     this.config = config;
     this.pricing = config.pricing;
-    this.file = null;
-    this.totals = { modelCalls: 0, toolCalls: 0, blockedCalls: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, cost: 0 };
+    this.agent = agent;
+    this.shared = shared;
+  }
+
+  get totals() {
+    return this.shared.totals;
+  }
+
+  get file() {
+    return this.shared.file;
+  }
+
+  forAgent(id, role) {
+    return new Trace(this.config, { id, role }, this.shared);
   }
 
   recordModelCall({ ms, inputTokens, cachedTokens, outputTokens, finishReason }) {
     const cost = calculateCost(this.pricing, inputTokens, cachedTokens, outputTokens);
-    this.totals.modelCalls++;
-    this.totals.inputTokens += inputTokens;
-    this.totals.cachedTokens += cachedTokens;
-    this.totals.outputTokens += outputTokens;
-    this.totals.cost += cost;
+    const tokens = { inputTokens, cachedTokens, outputTokens };
+    addModelCall(this.shared.totals, tokens, cost);
+    addModelCall(this.roleUsage(), tokens, cost);
     this.write({ type: "model", ms, inputTokens, cachedTokens, outputTokens, cost: Number(cost.toFixed(8)), finishReason });
     return cost;
+  }
+
+  roleUsage() {
+    const roles = this.shared.roles;
+    if (!roles.has(this.agent.role)) roles.set(this.agent.role, createUsage());
+    return roles.get(this.agent.role);
   }
 
   recordToolCall({ name, args, ms, bytes, status, reason }) {
@@ -75,27 +92,34 @@ export class Trace {
     this.write({ type: "resume", attempt, checkpoint, doneItems });
   }
 
+  recordAgentStart({ root, files, dependsOn }) {
+    this.write({ type: "agent_start", root, files, dependsOn });
+  }
+
+  recordAgentEnd({ outcome, turns, cost, inputTokens, cachedTokens, outputTokens }) {
+    this.write({ type: "agent_end", outcome, turns, cost: Number(cost.toFixed(8)), inputTokens, cachedTokens, outputTokens });
+  }
+
+  recordWave({ wave, agents, applied, conflicts, check }) {
+    this.write({ type: "wave", wave, agents, applied, conflicts, check });
+  }
+
+  recordTournament({ scores, winner, merged }) {
+    this.write({ type: "tournament", scores, winner, merged });
+  }
+
   recordTaskEnd({ outcome, turns, seconds, cost, inputTokens, cachedTokens, outputTokens }) {
     this.write({ type: "task", outcome, turns, seconds: Number(seconds.toFixed(1)), cost: Number(cost.toFixed(8)), inputTokens, cachedTokens, outputTokens });
   }
 
   write(entry) {
-    if (!this.file) {
-      this.file = createTraceFile();
+    if (!this.shared.file) {
+      this.shared.file = createTraceFile();
       this.write(describeSession(this.config));
     }
-    const line = JSON.stringify({ time: new Date().toISOString(), ...entry });
-    fs.appendFileSync(this.file, `${line}\n`);
+    const line = JSON.stringify({ time: new Date().toISOString(), agent: this.agent.id, role: this.agent.role, ...entry });
+    fs.appendFileSync(this.shared.file, `${line}\n`);
   }
-}
-
-export function readTokenCounts(usage, estimatedInputTokens, estimatedOutputTokens) {
-  if (!usage) return { inputTokens: estimatedInputTokens, cachedTokens: 0, outputTokens: estimatedOutputTokens };
-  return {
-    inputTokens: usage.prompt_tokens ?? 0,
-    cachedTokens: usage.prompt_tokens_details?.cached_tokens ?? usage.prompt_cache_hit_tokens ?? 0,
-    outputTokens: usage.completion_tokens ?? 0,
-  };
 }
 
 function describeSession(config) {
@@ -110,13 +134,6 @@ function describeSession(config) {
     seed: config.seed,
     policy: config.policy,
   };
-}
-
-function calculateCost(pricing, inputTokens, cachedTokens, outputTokens) {
-  const uncachedTokens = Math.max(0, inputTokens - cachedTokens);
-  const inputCost = uncachedTokens * pricing.inputPerMTok + cachedTokens * pricing.cachedInputPerMTok;
-  const outputCost = outputTokens * pricing.outputPerMTok;
-  return (inputCost + outputCost) / TOKENS_PER_MILLION;
 }
 
 function createTraceFile() {
