@@ -9,6 +9,7 @@ import { runPool } from "./lib/pool.js";
 import { runJob } from "./lib/job.js";
 import { renderAb, renderRuns, totals } from "./lib/report.js";
 import { sh } from "./lib/shell.js";
+import { publishResults } from "./publish.js";
 
 const RESULTS_DIR = new URL("./results/", import.meta.url).pathname;
 const DEFAULT_HARNESS = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
@@ -25,6 +26,7 @@ async function main() {
   const jobs = buildJobs(tasks, arms, options.runs);
   const records = await runPool(jobs, options.parallel, (job) => runJob(job, context).then((record) => saveRecord(context, record)));
   await writeResults({ stamp, options, arms, context, records });
+  if (!options.ab && !options.oracle && options.env.length === 0) publishResults();
 }
 
 function buildArms(options) {

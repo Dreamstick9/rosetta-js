@@ -23,7 +23,6 @@ async function* readServerSentEvents(body, onData) {
   const decoder = new TextDecoder();
   let buffer = "";
   for await (const bytes of body) {
-    onData();
     buffer += decoder.decode(bytes, { stream: true });
     const lines = buffer.split("\n");
     buffer = lines.pop();
@@ -31,7 +30,9 @@ async function* readServerSentEvents(body, onData) {
       if (!line.startsWith(DATA_PREFIX)) continue;
       const data = line.slice(DATA_PREFIX.length).trim();
       if (data === DONE_MARKER) return;
-      if (data) yield data;
+      if (!data) continue;
+      onData();
+      yield data;
     }
   }
 }
