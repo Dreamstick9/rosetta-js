@@ -41,7 +41,7 @@ function normalizeName(name) {
   return name.toLowerCase().replace(/\.git$/, "").replace(/[^a-z0-9]/g, "");
 }
 
-export function findTargetNames(taskText = "") {
+function findTargetNames(taskText = "") {
   const key = `${PROJECT_ROOT}\n${taskText}`;
   if (!targetNameCache.has(key)) targetNameCache.set(key, collectTargetNames(taskText));
   return targetNameCache.get(key);

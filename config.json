@@ -82,7 +82,7 @@
     "tournamentSize": 2
   },
   "web": {
-    "enabled": true,
+    "enabled": false,
     "maxFetchParts": 4,
     "excludedDomains": [],
     "jsonDigest": true,

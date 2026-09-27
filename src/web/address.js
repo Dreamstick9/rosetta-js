@@ -29,7 +29,7 @@ function blocked(host) {
   return new Error(`blocked: ${host} is a private or loopback address`);
 }
 
-export function isPrivateAddress(address) {
+function isPrivateAddress(address) {
   const mapped = readMappedV4(address);
   if (mapped) return isPrivateAddress(mapped);
   if (net.isIPv4(address)) return PRIVATE_V4_RANGES.some(([base, bits]) => inRange(address, base, bits));

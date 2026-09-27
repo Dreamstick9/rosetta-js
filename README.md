@@ -108,6 +108,7 @@ naming the field, and there is no fallback to another model.
 | `timeouts.streamStallSeconds` | a silent model stream is retried after this |
 | `retries.*` | `maxRetries` for network, 429 and 5xx errors, `maxStallRetries`, `baseBackoffMs`, `maxRetryAfterMs` |
 | `tools.*` | `maxSearchMatches`, `maxSearchLineLength`, `listDepth` and `readLineLimit` for the file tools |
+| `web.*` | `enabled` (adds `web_search` and `web_fetch`; off by default, see below), `maxFetchParts` per URL, `excludedDomains` never fetched, `jsonDigest` (outline instead of raw JSON), `timeoutSeconds` per request |
 
 The default pricing for `deepseek/deepseek-v4.1-flash` ($0.035 input, $0.001
 cached input, $0.29 output per million tokens) comes from the Hack Club
@@ -120,6 +121,8 @@ Environment variables:
 - `AI_BASE_URL`, `AI_MODEL`: override `baseUrl` and `model`. The effective
   model and URL are printed at start, with a note when an override is active,
   and recorded in the trace.
+- `BRAVE_API_KEY` or `TAVILY_API_KEY` (optional): `web_search` asks that API
+  first. Without them it reads DuckDuckGo HTML, DuckDuckGo Lite, then Bing.
 - `REPO` / `REPO_PATH`: the working folder. `ISSUE`: the task text, or a path
   to a file holding it.
 
@@ -143,6 +146,19 @@ Environment variables:
   `edit_file`, `delete_file`, `search`, `bash`. Paths are relative to the
   working folder, or absolute. Several read-only calls in one reply run at the
   same time.
+- **Web**: `web_search` returns at most 6 results; `web_fetch` returns a page
+  as text, in at most `maxFetchParts` parts of about 4k tokens. It runs in the
+  harness process, never through an LLM: HTML becomes markdown-like text, large
+  JSON becomes a key outline plus the values whose keys match the `prompt`
+  words, and PyPI, npm, crates.io and GitHub releases pages use their APIs.
+  Private and loopback addresses are refused at every redirect hop, and the
+  target repository's pull requests, commits and source views on GitHub
+  (found from the git remote or the task's `Repository:` line and issue URLs)
+  are refused so the upstream fix cannot be copied. Pages are cached for the
+  session; each search and fetch is traced with bytes and milliseconds.
+  Off by default: in September 2026 runs the web tools did not raise the pass
+  rate (the model can `curl` from bash) and made some non-web tasks cost more.
+  With `enabled: false` the prompt and tool list are unchanged.
 - **bash**: one shell for the whole session, so `cd`, variables and virtualenvs
   carry over. A timeout or Esc stops the whole command line and keeps the shell.
 - **No guardrails** (this branch): every command runs without asking, and the
@@ -192,4 +208,5 @@ Environment variables:
 | `src/trace.js` | JSONL trace and cost |
 | `src/input.js` | terminal line editor, paste handling, piped input |
 | `src/ui.js` | terminal output |
-| `src/tools/*.js` | file, search and bash tools |
+| `src/tools/*.js` | file, search, bash and web tools |
+| `src/web/*.js` | web search providers, safe fetch, HTML and JSON digests, registry fast paths, anti-cheat |
