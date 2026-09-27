@@ -101,17 +101,17 @@ export class Agent {
   }
 
   async runTools(calls, signal) {
-    const results = await runToolCalls(calls, { signal, loop: this.loop });
+    const results = await runToolCalls(calls, { signal, loop: this.loop, trace: this.trace, taskText: this.originalTask });
     const recorded = results.map((result) => ({ ...result, content: this.recordToolResult(result) }));
     this.messages.push(...this.adapter.resultMessages(recorded));
     signal.throwIfAborted();
     return results;
   }
 
-  recordToolResult({ call, output, status, ms }) {
+  recordToolResult({ call, output, line, status, ms }) {
     const content = truncateOutput(call.name === "bash" ? digestOutput(call.args.command, output, this.outputDirectory()) : output);
     const summary = summarizeToolArguments(call.args);
-    writeToolLine({ name: call.name, summary, status, output });
+    writeToolLine({ name: call.name, summary, status, output, line });
     const reason = status === "blocked" ? output : undefined;
     this.trace.recordToolCall({ name: call.name, args: summary, ms, bytes: Buffer.byteLength(content), status, reason });
     if (status === "ok" && FILE_TOOLS.has(call.name)) this.touchedFiles.add(call.args.path);

@@ -93,5 +93,12 @@
   "digest": {
     "enabled": true,
     "minLines": 60
+  },
+  "web": {
+    "enabled": true,
+    "maxFetchParts": 4,
+    "excludedDomains": [],
+    "jsonDigest": true,
+    "timeoutSeconds": 20
   }
 }

@@ -5,6 +5,7 @@ import { discoverSkills, listSkillLocations } from "./skills/discovery.js";
 import { formatCatalog, selectCatalogSkills } from "./skills/catalog.js";
 import { setAvailableSkills } from "./tools/skill.js";
 import { formatLessons, readRecentLessons } from "./lessons.js";
+import { WEB_PROMPT_LINE } from "./tools/web.js";
 
 const BASE_PROMPT = `You are a coding agent working in the user's project directory.
 Use the tools to inspect, change and test the project. Paths are relative to the project root, or absolute.
@@ -14,7 +15,7 @@ The bash tool runs in one persistent shell, so cd and environment changes carry 
 When the project has tests, run them after making changes.
 For a task with several separate steps, keep a plan with the todo tool and give each item a check command (such as its test) when you can; the harness ticks an item when its check passes. A small fix needs no plan.
 If the task cannot be done (for example, tests that contradict each other), call give_up with the reason; never special-case or game the tests.
-Keep replies short. When you are done, say what you changed.`;
+${WEB_PROMPT_LINE}Keep replies short. When you are done, say what you changed.`;
 
 export function buildSessionPrompt() {
   const settings = CONFIG.skills;
