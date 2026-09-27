@@ -6,14 +6,14 @@ import { resolvePath } from "./tools/files.js";
 const READ_TOOLS = new Set(["list_files", "read_file", "search"]);
 const WRITE_TOOLS = new Set(["create_file", "write_file", "edit_file"]);
 
-export function checkToolCall(name, args, shellCwd, root = PROJECT_ROOT) {
+export function checkToolCall(name, args, shellCwd, root = PROJECT_ROOT, readOnly = false) {
   if (CONFIG.policy === "off") return null;
-  if (name === "bash") return checkCommandLine(args.command, shellCwd, root);
+  if (name === "bash") return checkCommandLine(args.command, shellCwd, root, 0, readOnly);
   if (typeof args.path !== "string") return null;
   const target = resolvePath(args.path, root);
   if (READ_TOOLS.has(name)) return describeReadProblem(target, root);
-  if (WRITE_TOOLS.has(name)) return describeWriteProblem(target, root);
-  if (name === "delete_file") return describeDeleteProblem(target, false, root);
+  if (WRITE_TOOLS.has(name)) return describeWriteProblem(target, root, readOnly);
+  if (name === "delete_file") return describeDeleteProblem(target, false, root, readOnly);
   return null;
 }
 

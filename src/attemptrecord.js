@@ -2,7 +2,7 @@ import { takeProjectSnapshot } from "./checks.js";
 import { countFailureLines } from "./progress.js";
 
 const EDIT_TOOLS = new Set(["create_file", "write_file", "edit_file", "delete_file"]);
-const CHANGING_TOOLS = new Set([...EDIT_TOOLS, "bash"]);
+const CHANGING_TOOLS = new Set([...EDIT_TOOLS, "bash", "task"]);
 const KEPT_ERRORS = 5;
 const ERROR_LENGTH = 160;
 const CHECK_PASSED_POINTS = 1_000_000;
@@ -10,7 +10,7 @@ const TICK_POINTS = 1000;
 const MAX_FAILURE_PENALTY = 999;
 
 export class AttemptRecord {
-  constructor(number, startRef, planAtStart) {
+  constructor(number, startRef, planAtStart, root = undefined) {
     this.number = number;
     this.startRef = startRef;
     this.planAtStart = planAtStart;
@@ -26,7 +26,7 @@ export class AttemptRecord {
     this.outcome = "done";
     this.checkPassed = false;
     this.lastFailure = "";
-    this.snapshot = takeProjectSnapshot();
+    this.snapshot = takeProjectSnapshot(root);
   }
 
   noteToolResult({ call, output, status }) {

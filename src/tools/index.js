@@ -7,9 +7,10 @@ import { PROJECT_ROOT } from "../config.js";
 import { todoTool } from "./todo.js";
 import { giveUpTool } from "./give_up.js";
 import { checkToolCall, describeBlock } from "../policy.js";
-import { describeToolRefusal } from "../roles.js";
+import { describeToolRefusal, isReadOnlyRole } from "../roles.js";
+import { runTaskCalls, taskTool } from "./task.js";
 
-const TOOLS = [...FILE_TOOLS, searchTool, bashTool, skillTool, todoTool, giveUpTool, ...WEB_TOOLS];
+const TOOLS = [...FILE_TOOLS, searchTool, bashTool, skillTool, todoTool, giveUpTool, taskTool, ...WEB_TOOLS];
 const READ_ONLY_TOOL_NAMES = new Set(["list_files", "read_file", "search", "skill", "web_search", "web_fetch"]);
 const SUMMARY_LENGTH = 60;
 const INTERRUPTED_RESULT = "Interrupted by the user.";
@@ -19,14 +20,16 @@ export const TOOL_DEFINITIONS = TOOLS.map((tool) => tool.definition);
 export async function runToolCalls(calls, callerContext) {
   const context = { ...callerContext, root: callerContext.root ?? PROJECT_ROOT, shell: callerContext.shell ?? MAIN_SHELL };
   const results = [];
-  for (const batch of groupReadOnlyCalls(calls)) {
+  for (const batch of groupReadOnlyCalls(calls.filter((call) => call.name !== "task"))) {
     if (context.signal.aborted) {
       results.push(...batch.map((call) => ({ call, output: INTERRUPTED_RESULT, status: "error", ms: 0 })));
       continue;
     }
     results.push(...(await Promise.all(batch.map((call) => runToolCall(call, context)))));
   }
-  return results;
+  const taskCalls = calls.filter((call) => call.name === "task");
+  if (taskCalls.length > 0) results.push(...(await runTaskCalls(taskCalls, context)));
+  return calls.map((call) => results.find((result) => result.call === call));
 }
 
 function groupReadOnlyCalls(calls) {
@@ -52,7 +55,7 @@ async function runToolCall(call, context) {
     const refusal = describeToolRefusal(context.role, call.name);
     if (refusal) throw new Error(refusal);
     checkArguments(tool.definition.function, call.args);
-    const blockedReason = checkToolCall(call.name, call.args, context.shell.currentCwd(), context.root);
+    const blockedReason = checkToolCall(call.name, call.args, context.shell.currentCwd(), context.root, isReadOnlyRole(context.role));
     if (blockedReason) return { call, output: describeBlock(blockedReason), status: "blocked", ms: 0 };
     const result = await tool.run(call.args, context);
     const { output, line } = typeof result === "string" ? { output: result } : result;
@@ -80,7 +83,7 @@ function checkArguments(definition, args) {
 }
 
 export function summarizeToolArguments(args) {
-  const value = args?.path ?? args?.pattern ?? args?.command ?? args?.name ?? args?.url ?? args?.query ?? args?.action ?? args?.reason ?? "";
+  const value = args?.path ?? args?.pattern ?? args?.command ?? args?.name ?? args?.url ?? args?.query ?? args?.action ?? args?.reason ?? args?.prompt ?? "";
   const text = String(value).replaceAll("\n", " ").trim();
   if (text.length <= SUMMARY_LENGTH) return text;
   return `${text.slice(0, SUMMARY_LENGTH)}…`;

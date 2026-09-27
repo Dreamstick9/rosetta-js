@@ -20,6 +20,13 @@ export function diffFiles(file, mainPath, workerPath) {
   return capText(text);
 }
 
+export function countChangedLines(mainPath, workerPath) {
+  const args = ["diff", "--no-index", "--numstat", "--", existingOrEmpty(mainPath), existingOrEmpty(workerPath)];
+  const result = spawnSync("git", args, { encoding: "utf8", env: DIFF_ENVIRONMENT });
+  const [added, removed] = (result.stdout ?? "").split("\t");
+  return (Number(added) || 0) + (Number(removed) || 0);
+}
+
 function existingOrEmpty(filePath) {
   if (fs.existsSync(filePath)) return filePath;
   return EMPTY_FILE;

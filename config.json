@@ -88,7 +88,10 @@
     "fanOutMinItems": 2,
     "fanOutMinFiles": 4,
     "autoTournament": true,
-    "tournamentSize": 2
+    "tournamentSize": 2,
+    "maxResultLines": 10,
+    "maxResultLineChars": 200,
+    "lessonsPerAgent": 2
   },
   "digest": {
     "enabled": true,

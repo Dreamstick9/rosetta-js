@@ -7,12 +7,12 @@ const COMPACT_START_SHARE = CONFIG.context.compactStartShare;
 const COMPACT_TARGET_SHARE = CONFIG.context.compactTargetShare;
 const KEPT_TOOL_RESULTS = CONFIG.context.keptToolResults;
 
-let firstPrefix = null;
+const firstPrefixes = new Map();
 
-export function isPrefixStable(systemMessage, toolDefinitions) {
+export function isPrefixStable(systemMessage, toolDefinitions, owner = "main") {
   const prefix = JSON.stringify([systemMessage, toolDefinitions]);
-  firstPrefix ??= prefix;
-  return prefix === firstPrefix;
+  if (!firstPrefixes.has(owner)) firstPrefixes.set(owner, prefix);
+  return prefix === firstPrefixes.get(owner);
 }
 
 export function estimateTokens(value) {

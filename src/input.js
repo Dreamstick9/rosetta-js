@@ -35,6 +35,14 @@ export async function readHeadlessTask(args) {
   return null;
 }
 
+export function readBestOfSize(args) {
+  const index = args.indexOf("--best-of");
+  if (index === -1) return null;
+  const size = Number(args[index + 1]);
+  if (!Number.isInteger(size) || size < 1) return undefined;
+  return size;
+}
+
 function readIssueVariable() {
   const issue = process.env.ISSUE;
   if (!issue) return null;

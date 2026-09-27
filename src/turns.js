@@ -8,12 +8,17 @@ const MILESTONE_COMPACT_SHARE = CONFIG.loop.milestoneCompactShare;
 const NUDGE_MESSAGE = "Your reply was empty. Continue the task: call a tool, or give your final answer.";
 const STALL_NOTE = "You have made no progress for several turns: no plan item was ticked and the tests are not closer to passing. Stop and state a new hypothesis about the cause, then try a different approach.";
 
+export function createTurnStats() {
+  return { cost: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, turns: 0 };
+}
+
 export async function runAttemptTurns(agent, loop, signal, stats) {
   const attempt = loop.attempt;
   for (let turn = 1; turn <= agent.config.maxTurns; turn++) {
     stats.turns++;
     attempt.turns++;
-    if (agent.trace.totals.cost >= agent.config.maxSessionUsd) return stopForBudget(agent.config);
+    if (agent.trace.totals.cost >= agent.config.maxSessionUsd) return stopForBudget(`the session cost reached maxSessionUsd ($${agent.config.maxSessionUsd})`);
+    if (stats.cost >= agent.scope.maxUsd) return stopForBudget(`${agent.scope.id} reached its budget ($${agent.scope.maxUsd})`);
     const reply = await agent.requestReply(signal, stats);
     const outcome = await playTurn(agent, loop, reply, signal);
     if (outcome) return outcome;
@@ -33,8 +38,8 @@ function recordStall(agent, loop, action) {
   writeDimLine(`[no progress for ${quietTurns} turns${action === "end" ? "; ending this attempt" : ""}]`);
 }
 
-function stopForBudget(config) {
-  writeError(`Stopped: the session cost reached maxSessionUsd ($${config.maxSessionUsd}).`);
+function stopForBudget(reason) {
+  writeError(`Stopped: ${reason}.`);
   return "budget";
 }
 

@@ -4,21 +4,24 @@ import { ModelAdapter } from "./model/adapter.js";
 import { dropReasoning } from "./model/reasoning.js";
 import { TOOL_DEFINITIONS, runToolCalls, summarizeToolArguments } from "./tools/index.js";
 import { compactMessages, estimateTokens, isPrefixStable, needsCompaction, truncateOutput } from "./context.js";
-import { readTokenCounts } from "./trace.js";
+import { readTokenCounts } from "./usage.js";
 import { buildSessionPrompt, describeLoadedContext } from "./prompt.js";
 import { TaskLoop } from "./attempts.js";
 import { describeUnresumable, loadSession } from "./session.js";
 import { addSkillNotes } from "./skills-internal/index.js";
 import { digestOutput } from "./digest/index.js";
-import { createReplyPrinter, writeDimLine, writeError, writeToolLine } from "./ui.js";
+import { createQuietPrinter, createReplyPrinter, writeDimLine, writeError, writeToolLine } from "./ui.js";
 
 const TOOL_TOKENS = estimateTokens(TOOL_DEFINITIONS);
 const FILE_TOOLS = new Set(["read_file", "create_file", "write_file", "edit_file", "delete_file"]);
+const MAIN_SCOPE = { id: "main", role: "main", root: undefined, shell: undefined, maxUsd: Infinity, quiet: false };
 
 export class Agent {
-  constructor({ config, trace }) {
+  constructor({ config, trace, scope = MAIN_SCOPE }) {
     this.config = config;
     this.trace = trace;
+    this.scope = scope;
+    this.orchestrator = null;
     this.doneCheckEnabled = true;
     this.systemMessage = null;
     this.loop = new TaskLoop(this);
@@ -57,6 +60,13 @@ export class Agent {
     this.usageMark = null;
   }
 
+  startSubtask(systemMessage, text) {
+    this.systemMessage = this.adapter.systemMessage(systemMessage.content);
+    this.originalTask = text;
+    this.currentRequest = text;
+    this.startConversation(text);
+  }
+
   addUserMessage(text) {
     this.messages.push({ role: "user", content: text });
   }
@@ -72,7 +82,7 @@ export class Agent {
 
   async requestReply(signal, stats) {
     this.compactIfNeeded();
-    if (!isPrefixStable(this.messages[0], TOOL_DEFINITIONS)) {
+    if (!isPrefixStable(this.messages[0], TOOL_DEFINITIONS, this.scope.id)) {
       writeError("Error: the system prompt or tool list changed, so prompt caching will break.");
     }
     const promptEstimate = this.estimateContextTokens();
@@ -81,7 +91,7 @@ export class Agent {
       config: this.config,
       messages: this.messages,
       ...this.adapter.requestOptions(),
-      handlers: createReplyPrinter(),
+      handlers: this.scope.quiet ? createQuietPrinter() : createReplyPrinter(),
       signal,
       onRetry: (message) => writeDimLine(`[retry] ${message}`),
     });
@@ -101,7 +111,8 @@ export class Agent {
   }
 
   async runTools(calls, signal) {
-    const results = await runToolCalls(calls, { signal, loop: this.loop, trace: this.trace, taskText: this.originalTask });
+    const { root, shell, role } = this.scope;
+    const results = await runToolCalls(calls, { signal, loop: this.loop, orchestrator: this.orchestrator, root, shell, role, trace: this.trace, taskText: this.originalTask });
     const recorded = results.map((result) => ({ ...result, content: this.recordToolResult(result) }));
     this.messages.push(...this.adapter.resultMessages(recorded));
     signal.throwIfAborted();
@@ -111,7 +122,7 @@ export class Agent {
   recordToolResult({ call, output, line, status, ms }) {
     const content = truncateOutput(call.name === "bash" ? digestOutput(call.args.command, output, this.outputDirectory()) : output);
     const summary = summarizeToolArguments(call.args);
-    writeToolLine({ name: call.name, summary, status, output, line });
+    writeToolLine({ name: call.name, summary, status, output, line, label: this.scope.quiet ? this.scope.id : null });
     const reason = status === "blocked" ? output : undefined;
     this.trace.recordToolCall({ name: call.name, args: summary, ms, bytes: Buffer.byteLength(content), status, reason });
     if (status === "ok" && FILE_TOOLS.has(call.name)) this.touchedFiles.add(call.args.path);

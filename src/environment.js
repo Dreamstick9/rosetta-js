@@ -27,3 +27,9 @@ export function buildChildEnvironment() {
 export function isSecretVariableName(name) {
   return SECRET_NAME_PATTERN.test(name);
 }
+
+export function describeSecretPrint(args) {
+  if (args.length === 0) return null;
+  const secret = args.find(isSecretVariableName);
+  return secret ? `it prints the secret variable ${secret}` : null;
+}

@@ -4,8 +4,8 @@ import { Checkpoints } from "./checkpoints.js";
 import { StallWatch } from "./progress.js";
 import { AttemptRecord } from "./attemptrecord.js";
 import { findTestCommand, runDoneCheck } from "./checks.js";
-import { runAttemptTurns } from "./turns.js";
-import { appendLesson, buildFreshAttemptMessage, buildLesson, readRecentLessons } from "./lessons.js";
+import { createTurnStats, runAttemptTurns } from "./turns.js";
+import { buildFreshAttemptMessage, readRecentLessons, recordAttemptLesson } from "./lessons.js";
 import { buildResumeMessage, saveLoopState } from "./session.js";
 import { writeDimLine } from "./ui.js";
 
@@ -62,13 +62,13 @@ export class TaskLoop {
   }
 
   async runAttempts(signal) {
-    const stats = { cost: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, turns: 0 };
+    const stats = createTurnStats();
     while (true) {
       const turnsOutcome = await runAttemptTurns(this.agent, this, signal, stats);
       const outcome = await this.measureTests(turnsOutcome, signal);
       this.endAttempt(outcome);
       const canRetry = RETRY_OUTCOMES.has(outcome) && this.attempt.number < LOOP.maxAttempts;
-      if (!canRetry) return { ...stats, outcome: this.finishTask(outcome) };
+      if (!canRetry) return { ...stats, outcome: this.finishTask(await this.runFallback(outcome, signal)) };
       this.startFreshAttempt();
     }
   }
@@ -111,23 +111,15 @@ export class TaskLoop {
     if (!this.best || score > this.best.score) this.best = { attempt: attempt.number, score, ref: endRef };
     if (attempt.isReal()) this.realAttempts++;
     this.trace.recordAttemptEnd({ attempt: attempt.number, outcome, score, turns: attempt.turns, toolCalls: attempt.toolCalls });
-    if (LESSON_OUTCOMES.has(outcome)) this.writeLesson(attempt, endRef);
+    if (LESSON_OUTCOMES.has(outcome)) recordAttemptLesson(this, attempt, endRef);
   }
 
-  writeLesson(attempt, endRef) {
-    const lesson = buildLesson({
-      task: this.task,
-      attempt: attempt.number,
-      outcome: attempt.outcome,
-      diffStat: this.checkpoints.diffStat(attempt.startRef, endRef),
-      failingOutput: attempt.lastFailure,
-      errors: attempt.errors,
-      editedFiles: attempt.editedFiles,
-      toolCounts: attempt.toolCounts,
-    });
-    appendLesson(lesson);
-    this.taskLessons.push(lesson);
-    this.trace.recordLesson({ attempt: attempt.number, outcome: attempt.outcome, diffStat: lesson.diffStat });
+  async runFallback(outcome, signal) {
+    const orchestrator = this.agent.orchestrator;
+    if (!RETRY_OUTCOMES.has(outcome) || !orchestrator) return outcome;
+    this.checkpoints.restore(this.attempt.startRef);
+    const passed = await orchestrator.runFallbackTournament(this.task, this.taskLessons, signal);
+    return passed ? "done" : outcome;
   }
 
   finishTask(outcome) {
