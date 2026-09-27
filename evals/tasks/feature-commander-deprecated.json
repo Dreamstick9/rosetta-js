@@ -1,0 +1,16 @@
+{
+  "id": "feature-commander-deprecated",
+  "category": "multistep",
+  "repo": "https://github.com/tj/commander.js",
+  "commit": "ba6d13ddb4243e5913367734f8c159089ffe7834",
+  "setup": [
+    "npm pkg set scripts.test='node --test'"
+  ],
+  "task": "Feature request: deprecated options\n\nWe want to phase out some options without breaking scripts that still use them. Please add deprecated options to commander:\n\n1. `Option.prototype.deprecated(message)` marks the option as deprecated and returns the option for chaining. `message` is optional. The option gets two properties: `isDeprecated` (`false` by default, `true` after calling `deprecated()`) and `deprecationMessage` (`''` by default, otherwise the message).\n2. Help: `Help.optionDescription()` shows the deprecation as the last item of the parenthesised extra information, after default/choices/preset/env: `(deprecated)` without a message, `(deprecated: <message>)` with one. For example `new Option('-c, --colour <name>', 'output colour').default('auto').deprecated('use --color')` is described as `output colour (default: \"auto\", deprecated: use --color)`, and an option without a description is described as just `(deprecated: <message>)`.\n3. Parsing: each time a deprecated option is used on the command line, commander writes `warning: option '<flags>' is deprecated\\n` (or `warning: option '<flags>' is deprecated: <message>\\n` when there is a message) through the command's error output, so `configureOutput({ writeErr })` receives it. `<flags>` is the option's flags string as given, e.g. `-c, --colour <name>`. Values that come from defaults or environment variables do not warn. Apart from the warning, parsing works exactly as before, including for subcommands.\n4. Add the new method and properties to the TypeScript typings in `typings/index.d.ts`.\n\nAdd tests for the new behavior. `npm test` must keep passing.",
+  "hidden": {
+    "files": "hidden"
+  },
+  "grade": "grep -q 'deprecated(' typings/index.d.ts && node --test",
+  "gold": "gold.patch",
+  "timeoutSeconds": 1200
+}

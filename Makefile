@@ -3,7 +3,7 @@ NODE := PATH="$(CURDIR)/.tools/node/bin:$$PATH" node
 
 export REPO REPO_PATH TARGET_REPO WORK_DIR ISSUE
 
-.PHONY: setup run chat test clean
+.PHONY: setup run chat test clean eval eval-quick eval-check
 
 setup:
 	@bash scripts/setup.sh
@@ -26,6 +26,16 @@ test: setup
 	@AI_API_KEY=unused $(NODE) test/repair.js
 	@AI_API_KEY=unused $(NODE) test/skills-internal.js
 	@$(NODE) $(ENV_FILE_FLAG) test/smoke.js
+
+eval:
+	@$(NODE) evals/run.js $(EVAL_ARGS)
+
+eval-quick:
+	@$(NODE) evals/run.js --quick $(EVAL_ARGS)
+
+eval-check:
+	@$(NODE) evals/run.js --oracle gold --parallel 4 $(EVAL_ARGS)
+	@$(NODE) evals/run.js --oracle none --parallel 4 $(EVAL_ARGS)
 
 clean:
 	rm -rf runs .tools /tmp/rjs-*

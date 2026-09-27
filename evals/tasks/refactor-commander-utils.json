@@ -1,0 +1,13 @@
+{
+  "id": "refactor-commander-utils",
+  "category": "refactor",
+  "repo": "https://github.com/tj/commander.js",
+  "commit": "ba6d13ddb4243e5913367734f8c159089ffe7834",
+  "setup": [
+    "npm pkg set scripts.test='node --test'"
+  ],
+  "task": "Refactor: collect commander's internal helper functions in lib/utils.js\n\nThe small helper functions are scattered over several modules. Please move them into one new module, `lib/utils.js`, and export each one by name from there:\n\n- `camelcase` and `splitOptionFlags` (currently in `lib/option.js`)\n- `humanReadableArgName` (currently in `lib/argument.js`)\n- `editDistance` and `suggestSimilar` (currently in `lib/suggestSimilar.js`)\n\nThen delete `lib/suggestSimilar.js`, and update every importer (`lib/command.js`, `lib/help.js`, `lib/option.js`, `lib/argument.js`, and any tests) to import the helpers from `./utils.js`. Do not leave the helpers defined or re-exported in their old modules.\n\nThis is a pure refactor: the public API exported from `index.js` must not change, behavior must not change, and `npm test` must keep passing.",
+  "grade": "node \"$EVAL_TASK_DIR/check.mjs\" && node --test",
+  "gold": "gold.patch",
+  "timeoutSeconds": 900
+}

@@ -1,0 +1,239 @@
+diff --git a/lib/argument.js b/lib/argument.js
+index 6da521d..2f6f783 100644
+--- a/lib/argument.js
++++ b/lib/argument.js
+@@ -131,17 +131,3 @@ export class Argument {
+     return this;
+   }
+ }
+-
+-/**
+- * Takes an argument and returns its human readable equivalent for help usage.
+- *
+- * @param {Argument} arg
+- * @return {string}
+- * @private
+- */
+-
+-export function humanReadableArgName(arg) {
+-  const nameOutput = arg.name() + (arg.variadic === true ? '...' : '');
+-
+-  return arg.required ? '<' + nameOutput + '>' : '[' + nameOutput + ']';
+-}
+diff --git a/lib/command.js b/lib/command.js
+index 9a3d03e..6fdf313 100644
+--- a/lib/command.js
++++ b/lib/command.js
+@@ -5,11 +5,11 @@ import fs from 'node:fs';
+ import process from 'node:process';
+ import { stripVTControlCharacters } from 'node:util';
+ 
+-import { Argument, humanReadableArgName } from './argument.js';
++import { Argument } from './argument.js';
+ import { CommanderError } from './error.js';
+ import { Help } from './help.js';
+ import { Option, DualOptions } from './option.js';
+-import { suggestSimilar } from './suggestSimilar.js';
++import { humanReadableArgName, suggestSimilar } from './utils.js';
+ 
+ export class Command extends EventEmitter {
+   /**
+diff --git a/lib/help.js b/lib/help.js
+index 6afac74..35edac0 100644
+--- a/lib/help.js
++++ b/lib/help.js
+@@ -1,4 +1,4 @@
+-import { humanReadableArgName } from './argument.js';
++import { humanReadableArgName } from './utils.js';
+ import { stripVTControlCharacters } from 'node:util';
+ 
+ /**
+diff --git a/lib/option.js b/lib/option.js
+index 4b4daaf..9ef360c 100644
+--- a/lib/option.js
++++ b/lib/option.js
+@@ -1,4 +1,5 @@
+ import { InvalidArgumentError } from './error.js';
++import { camelcase, splitOptionFlags } from './utils.js';
+ 
+ export class Option {
+   /**
+@@ -304,74 +305,3 @@ export class DualOptions {
+     return option.negate === (negativeValue === value);
+   }
+ }
+-
+-/**
+- * Convert string from kebab-case to camelCase.
+- *
+- * @param {string} str
+- * @return {string}
+- * @private
+- */
+-
+-function camelcase(str) {
+-  return str.split('-').reduce((str, word) => {
+-    return str + word[0].toUpperCase() + word.slice(1);
+-  });
+-}
+-
+-/**
+- * Split the short and long flag out of something like '-m,--mixed <value>'
+- *
+- * @private
+- */
+-
+-function splitOptionFlags(flags) {
+-  let shortFlag;
+-  let longFlag;
+-  // short flag, single dash and single character
+-  const shortFlagExp = /^-[^-]$/;
+-  // long flag, double dash and at least one character
+-  const longFlagExp = /^--[^-]/;
+-
+-  const flagParts = flags.split(/[ |,]+/).concat('guard');
+-  // Normal is short and/or long.
+-  if (shortFlagExp.test(flagParts[0])) shortFlag = flagParts.shift();
+-  if (longFlagExp.test(flagParts[0])) longFlag = flagParts.shift();
+-  // Long then short. Rarely used but fine.
+-  if (!shortFlag && shortFlagExp.test(flagParts[0]))
+-    shortFlag = flagParts.shift();
+-  // Allow two long flags, like '--ws, --workspace'
+-  // This is the supported way to have a shortish option flag.
+-  if (!shortFlag && longFlagExp.test(flagParts[0])) {
+-    shortFlag = longFlag;
+-    longFlag = flagParts.shift();
+-  }
+-
+-  // Check for unprocessed flag. Fail noisily rather than silently ignore.
+-  if (flagParts[0].startsWith('-')) {
+-    const unsupportedFlag = flagParts[0];
+-    const baseError = `option creation failed due to '${unsupportedFlag}' in option flags '${flags}'`;
+-    if (/^-[^-][^-]/.test(unsupportedFlag))
+-      throw new Error(
+-        `${baseError}
+-- a short flag is a single dash and a single character
+-  - either use a single dash and a single character (for a short flag)
+-  - or use a double dash for a long option (and can have two, like '--ws, --workspace')`,
+-      );
+-    if (shortFlagExp.test(unsupportedFlag))
+-      throw new Error(`${baseError}
+-- too many short flags`);
+-    if (longFlagExp.test(unsupportedFlag))
+-      throw new Error(`${baseError}
+-- too many long flags`);
+-
+-    throw new Error(`${baseError}
+-- unrecognised flag format`);
+-  }
+-  if (shortFlag === undefined && longFlag === undefined)
+-    throw new Error(
+-      `option creation failed due to no flags found in '${flags}'.`,
+-    );
+-
+-  return { shortFlag, longFlag };
+-}
+diff --git a/lib/suggestSimilar.js b/lib/utils.js
+similarity index 50%
+rename from lib/suggestSimilar.js
+rename to lib/utils.js
+index 1993006..b99d50b 100644
+--- a/lib/suggestSimilar.js
++++ b/lib/utils.js
+@@ -1,6 +1,6 @@
+ const maxDistance = 3;
+ 
+-function editDistance(a, b) {
++export function editDistance(a, b) {
+   // https://en.wikipedia.org/wiki/Damerau–Levenshtein_distance
+   // Calculating optimal string alignment distance, no substring is edited more than once.
+   // (Simple implementation.)
+@@ -97,3 +97,88 @@ export function suggestSimilar(word, candidates) {
+   }
+   return '';
+ }
++
++/**
++ * Convert string from kebab-case to camelCase.
++ *
++ * @param {string} str
++ * @return {string}
++ * @private
++ */
++
++export function camelcase(str) {
++  return str.split('-').reduce((str, word) => {
++    return str + word[0].toUpperCase() + word.slice(1);
++  });
++}
++
++/**
++ * Split the short and long flag out of something like '-m,--mixed <value>'
++ *
++ * @private
++ */
++
++export function splitOptionFlags(flags) {
++  let shortFlag;
++  let longFlag;
++  // short flag, single dash and single character
++  const shortFlagExp = /^-[^-]$/;
++  // long flag, double dash and at least one character
++  const longFlagExp = /^--[^-]/;
++
++  const flagParts = flags.split(/[ |,]+/).concat('guard');
++  // Normal is short and/or long.
++  if (shortFlagExp.test(flagParts[0])) shortFlag = flagParts.shift();
++  if (longFlagExp.test(flagParts[0])) longFlag = flagParts.shift();
++  // Long then short. Rarely used but fine.
++  if (!shortFlag && shortFlagExp.test(flagParts[0]))
++    shortFlag = flagParts.shift();
++  // Allow two long flags, like '--ws, --workspace'
++  // This is the supported way to have a shortish option flag.
++  if (!shortFlag && longFlagExp.test(flagParts[0])) {
++    shortFlag = longFlag;
++    longFlag = flagParts.shift();
++  }
++
++  // Check for unprocessed flag. Fail noisily rather than silently ignore.
++  if (flagParts[0].startsWith('-')) {
++    const unsupportedFlag = flagParts[0];
++    const baseError = `option creation failed due to '${unsupportedFlag}' in option flags '${flags}'`;
++    if (/^-[^-][^-]/.test(unsupportedFlag))
++      throw new Error(
++        `${baseError}
++- a short flag is a single dash and a single character
++  - either use a single dash and a single character (for a short flag)
++  - or use a double dash for a long option (and can have two, like '--ws, --workspace')`,
++      );
++    if (shortFlagExp.test(unsupportedFlag))
++      throw new Error(`${baseError}
++- too many short flags`);
++    if (longFlagExp.test(unsupportedFlag))
++      throw new Error(`${baseError}
++- too many long flags`);
++
++    throw new Error(`${baseError}
++- unrecognised flag format`);
++  }
++  if (shortFlag === undefined && longFlag === undefined)
++    throw new Error(
++      `option creation failed due to no flags found in '${flags}'.`,
++    );
++
++  return { shortFlag, longFlag };
++}
++
++/**
++ * Takes an argument and returns its human readable equivalent for help usage.
++ *
++ * @param {Argument} arg
++ * @return {string}
++ * @private
++ */
++
++export function humanReadableArgName(arg) {
++  const nameOutput = arg.name() + (arg.variadic === true ? '...' : '');
++
++  return arg.required ? '<' + nameOutput + '>' : '[' + nameOutput + ']';
++}

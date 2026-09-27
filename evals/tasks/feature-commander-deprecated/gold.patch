@@ -1,0 +1,95 @@
+diff --git a/lib/command.js b/lib/command.js
+index 9a3d03e..5098525 100644
+--- a/lib/command.js
++++ b/lib/command.js
+@@ -709,6 +709,14 @@ Expecting one of '${allowedValues.join("', '")}'`);
+     };
+ 
+     this.on('option:' + oname, (val) => {
++      if (option.isDeprecated) {
++        const detail = option.deprecationMessage
++          ? `: ${option.deprecationMessage}`
++          : '';
++        this._outputConfiguration.writeErr(
++          `warning: option '${option.flags}' is deprecated${detail}\n`,
++        );
++      }
+       const invalidValueMessage = `error: option '${option.flags}' argument '${val}' is invalid.`;
+       handleOptionValue(val, invalidValueMessage, 'cli');
+     });
+diff --git a/lib/help.js b/lib/help.js
+index 6afac74..4700e3c 100644
+--- a/lib/help.js
++++ b/lib/help.js
+@@ -352,6 +352,13 @@ export class Help {
+     if (option.envVar !== undefined) {
+       extraInfo.push(`env: ${option.envVar}`);
+     }
++    if (option.isDeprecated) {
++      extraInfo.push(
++        option.deprecationMessage
++          ? `deprecated: ${option.deprecationMessage}`
++          : 'deprecated',
++      );
++    }
+     if (extraInfo.length > 0) {
+       const extraDescription = `(${extraInfo.join(', ')})`;
+       if (option.description) {
+diff --git a/lib/option.js b/lib/option.js
+index 4b4daaf..8b4bdaf 100644
+--- a/lib/option.js
++++ b/lib/option.js
+@@ -30,6 +30,8 @@ export class Option {
+     this.envVar = undefined;
+     this.parseArg = undefined;
+     this.hidden = false;
++    this.isDeprecated = false;
++    this.deprecationMessage = '';
+     this.argChoices = undefined;
+     this.conflictsWith = [];
+     this.implied = undefined;
+@@ -158,6 +160,19 @@ export class Option {
+     return this;
+   }
+ 
++  /**
++   * Mark the option as deprecated. Using it on the command line writes a warning.
++   *
++   * @param {string} [message] - what to use instead
++   * @return {Option}
++   */
++
++  deprecated(message = '') {
++    this.isDeprecated = true;
++    this.deprecationMessage = message;
++    return this;
++  }
++
+   /**
+    * @package
+    */
+diff --git a/typings/index.d.ts b/typings/index.d.ts
+index e3d0b72..df1d8a2 100644
+--- a/typings/index.d.ts
++++ b/typings/index.d.ts
+@@ -109,6 +109,8 @@ export class Option {
+   envVar?: string;
+   parseArg?: <T>(value: string, previous: T) => T;
+   hidden: boolean;
++  isDeprecated: boolean;
++  deprecationMessage: string;
+   argChoices?: string[];
+   helpGroupHeading?: string;
+ 
+@@ -178,6 +180,11 @@ export class Option {
+    */
+   hideHelp(hide?: boolean): this;
+ 
++  /**
++   * Mark the option as deprecated. Using it on the command line writes a warning.
++   */
++  deprecated(message?: string): this;
++
+   /**
+    * Only allow option value to be one of choices.
+    */

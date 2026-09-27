@@ -1,0 +1,426 @@
+diff --git a/tests/test_utils.py b/tests/test_cache.py
+similarity index 83%
+rename from tests/test_utils.py
+rename to tests/test_cache.py
+index 1fe622e..28c1d2a 100644
+--- a/tests/test_utils.py
++++ b/tests/test_cache.py
+@@ -1,6 +1,6 @@
+ import pytest
+ 
+-from tinydb.utils import LRUCache, freeze, FrozenDict
++from tinydb.cache import LRUCache
+ 
+ 
+ def test_lru_cache():
+@@ -140,22 +140,3 @@ def test_lru_cache_falsy_values_bug():
+     assert cache.lru == ["c", "a", "d"]
+     assert "b" not in cache
+     assert cache["a"] == 3
+-
+-def test_freeze():
+-    frozen = freeze([0, 1, 2, {'a': [1, 2, 3]}, {1, 2}])
+-    assert isinstance(frozen, tuple)
+-    assert isinstance(frozen[3], FrozenDict)
+-    assert isinstance(frozen[3]['a'], tuple)
+-    assert isinstance(frozen[4], frozenset)
+-
+-    with pytest.raises(TypeError):
+-        frozen[0] = 10
+-
+-    with pytest.raises(TypeError):
+-        frozen[3]['a'] = 10
+-
+-    with pytest.raises(TypeError):
+-        frozen[3].pop('a')
+-
+-    with pytest.raises(TypeError):
+-        frozen[3].update({'a': 9})
+diff --git a/tests/test_frozen.py b/tests/test_frozen.py
+new file mode 100644
+index 0000000..84a1b18
+--- /dev/null
++++ b/tests/test_frozen.py
+@@ -0,0 +1,23 @@
++import pytest
++
++from tinydb.frozen import freeze, FrozenDict
++
++
++def test_freeze():
++    frozen = freeze([0, 1, 2, {'a': [1, 2, 3]}, {1, 2}])
++    assert isinstance(frozen, tuple)
++    assert isinstance(frozen[3], FrozenDict)
++    assert isinstance(frozen[3]['a'], tuple)
++    assert isinstance(frozen[4], frozenset)
++
++    with pytest.raises(TypeError):
++        frozen[0] = 10
++
++    with pytest.raises(TypeError):
++        frozen[3]['a'] = 10
++
++    with pytest.raises(TypeError):
++        frozen[3].pop('a')
++
++    with pytest.raises(TypeError):
++        frozen[3].update({'a': 9})
+diff --git a/tinydb/cache.py b/tinydb/cache.py
+new file mode 100644
+index 0000000..32cda4a
+--- /dev/null
++++ b/tinydb/cache.py
+@@ -0,0 +1,94 @@
++"""
++A least-recently used cache.
++"""
++
++from collections import OrderedDict, abc
++from collections.abc import Iterator
++from typing import TypeVar, Generic, Union, Optional, cast
++
++K = TypeVar('K')
++V = TypeVar('V')
++D = TypeVar('D')
++
++__all__ = ('LRUCache',)
++
++# Used internally by LRUCache to tell "key maps to None" apart from
++# "key isn't in the cache at all"
++_missing = object()
++
++
++class LRUCache(abc.MutableMapping, Generic[K, V]):
++    """
++    A least-recently used (LRU) cache with a fixed cache size.
++
++    This class acts as a dictionary but has a limited size. If the number of
++    entries in the cache exceeds the cache size, the least-recently accessed
++    entry will be discarded.
++
++    This is implemented using an ``OrderedDict``. On every access the accessed
++    entry is moved to the front by re-inserting it into the ``OrderedDict``.
++    When adding an entry and the cache size is exceeded, the last entry will
++    be discarded.
++    """
++
++    def __init__(self, capacity=None) -> None:
++        self.capacity = capacity
++        self.cache: OrderedDict[K, V] = OrderedDict()
++
++    @property
++    def lru(self) -> list[K]:
++        return list(self.cache.keys())
++
++    @property
++    def length(self) -> int:
++        return len(self.cache)
++
++    def clear(self) -> None:
++        self.cache.clear()
++
++    def __len__(self) -> int:
++        return self.length
++
++    def __contains__(self, key: object) -> bool:
++        return key in self.cache
++
++    def __setitem__(self, key: K, value: V) -> None:
++        self.set(key, value)
++
++    def __delitem__(self, key: K) -> None:
++        del self.cache[key]
++
++    def __getitem__(self, key) -> V:
++        value = self.cache.get(key, _missing)
++        if value is _missing:
++            raise KeyError(key)
++
++        self.cache.move_to_end(key, last=True)
++
++        return cast(V, value)
++
++    def __iter__(self) -> Iterator[K]:
++        return iter(self.cache)
++
++    def get(self, key: K, default: Optional[D] = None) -> Optional[Union[V, D]]:
++        value = self.cache.get(key, _missing)
++
++        if value is not _missing:
++            self.cache.move_to_end(key, last=True)
++
++            return cast(V, value)
++
++        return default
++
++    def set(self, key: K, value: V):
++        if key in self.cache:
++            self.cache[key] = value
++            self.cache.move_to_end(key, last=True)
++        else:
++            self.cache[key] = value
++
++            # Check, if the cache is full and we have to remove old items
++            # If the queue is of unlimited size, self.capacity is NaN and
++            # x > NaN is always False in Python and the cache won't be cleared.
++            if self.capacity is not None and self.length > self.capacity:
++                self.cache.popitem(last=False)
+diff --git a/tinydb/frozen.py b/tinydb/frozen.py
+new file mode 100644
+index 0000000..69148ec
+--- /dev/null
++++ b/tinydb/frozen.py
+@@ -0,0 +1,57 @@
++"""
++Immutable helpers used to hash queries.
++"""
++
++__all__ = ('FrozenDict', 'freeze')
++
++
++class FrozenDict(dict):
++    """
++    An immutable dictionary.
++
++    This is used to generate stable hashes for queries that contain dicts.
++    Usually, Python dicts are not hashable because they are mutable. This
++    class removes the mutability and implements the ``__hash__`` method.
++    """
++
++    def __hash__(self):
++        # Calculate the has by hashing a tuple of all dict items
++        return hash(tuple(sorted(self.items())))
++
++    def _immutable(self, *args, **kws):
++        raise TypeError('object is immutable')
++
++    # Disable write access to the dict
++    __setitem__ = _immutable
++    __delitem__ = _immutable
++    clear = _immutable
++    setdefault = _immutable  # type: ignore
++    popitem = _immutable
++
++    def update(self, e=None, **f):
++        raise TypeError('object is immutable')
++
++    def pop(self, k, d=None):
++        raise TypeError('object is immutable')
++
++
++def freeze(obj):
++    """
++    Freeze an object by making it immutable and thus hashable.
++    """
++    if isinstance(obj, dict):
++        # Transform dicts into ``FrozenDict``s
++        return FrozenDict((k, freeze(v)) for k, v in obj.items())
++    elif isinstance(obj, list):
++        # Transform lists into tuples
++        return tuple(freeze(el) for el in obj)
++    elif isinstance(obj, tuple):
++        # Freeze tuple elements too, so a nested dict/list inside an
++        # already-tuple arg (e.g. Query.test's *args) is still hashable
++        return tuple(freeze(el) for el in obj)
++    elif isinstance(obj, set):
++        # Transform sets into ``frozenset``s
++        return frozenset(obj)
++    else:
++        # Don't handle all other objects
++        return obj
+diff --git a/tinydb/queries.py b/tinydb/queries.py
+index cdab9fb..ca59b66 100644
+--- a/tinydb/queries.py
++++ b/tinydb/queries.py
+@@ -20,7 +20,7 @@ import re
+ from collections.abc import Mapping, Callable
+ from typing import Any, Union, Optional, Protocol
+ 
+-from .utils import freeze
++from .frozen import freeze
+ 
+ __all__ = ('Query', 'QueryLike', 'where')
+ 
+diff --git a/tinydb/table.py b/tinydb/table.py
+index f4027bf..8a17870 100644
+--- a/tinydb/table.py
++++ b/tinydb/table.py
+@@ -14,7 +14,7 @@ from typing import (
+ 
+ from .queries import QueryLike
+ from .storages import Storage
+-from .utils import LRUCache
++from .cache import LRUCache
+ 
+ __all__ = ('Document', 'Table')
+ 
+@@ -41,7 +41,7 @@ class Table:
+     .. admonition:: Query Cache
+ 
+         As an optimization, a query cache is implemented using a
+-        :class:`~tinydb.utils.LRUCache`. This class mimics the interface of
++        :class:`~tinydb.cache.LRUCache`. This class mimics the interface of
+         a normal ``dict``, but starts to remove the least-recently used entries
+         once a threshold is reached.
+ 
+diff --git a/tinydb/utils.py b/tinydb/utils.py
+index 43cad4e..8803e39 100644
+--- a/tinydb/utils.py
++++ b/tinydb/utils.py
+@@ -2,21 +2,11 @@
+ Utility functions.
+ """
+ 
+-from collections import OrderedDict, abc
+-from collections.abc import Iterator
+-from typing import TypeVar, Generic, Union, Optional, TYPE_CHECKING, cast
++from typing import TypeVar, TYPE_CHECKING
+ 
+-K = TypeVar('K')
+-V = TypeVar('V')
+-D = TypeVar('D')
+ T = TypeVar('T')
+ 
+-__all__ = ('LRUCache', 'freeze', 'with_typehint')
+-
+-# Used internally by LRUCache to tell "key maps to None" apart from
+-# "key isn't in the cache at all"
+-_missing = object()
+-
++__all__ = ('with_typehint',)
+ 
+ def with_typehint(baseclass: type[T]):
+     """
+@@ -38,132 +28,3 @@ def with_typehint(baseclass: type[T]):
+ 
+     # Otherwise: just inherit from `object` like a regular Python class
+     return object
+-
+-
+-class LRUCache(abc.MutableMapping, Generic[K, V]):
+-    """
+-    A least-recently used (LRU) cache with a fixed cache size.
+-
+-    This class acts as a dictionary but has a limited size. If the number of
+-    entries in the cache exceeds the cache size, the least-recently accessed
+-    entry will be discarded.
+-
+-    This is implemented using an ``OrderedDict``. On every access the accessed
+-    entry is moved to the front by re-inserting it into the ``OrderedDict``.
+-    When adding an entry and the cache size is exceeded, the last entry will
+-    be discarded.
+-    """
+-
+-    def __init__(self, capacity=None) -> None:
+-        self.capacity = capacity
+-        self.cache: OrderedDict[K, V] = OrderedDict()
+-
+-    @property
+-    def lru(self) -> list[K]:
+-        return list(self.cache.keys())
+-
+-    @property
+-    def length(self) -> int:
+-        return len(self.cache)
+-
+-    def clear(self) -> None:
+-        self.cache.clear()
+-
+-    def __len__(self) -> int:
+-        return self.length
+-
+-    def __contains__(self, key: object) -> bool:
+-        return key in self.cache
+-
+-    def __setitem__(self, key: K, value: V) -> None:
+-        self.set(key, value)
+-
+-    def __delitem__(self, key: K) -> None:
+-        del self.cache[key]
+-
+-    def __getitem__(self, key) -> V:
+-        value = self.cache.get(key, _missing)
+-        if value is _missing:
+-            raise KeyError(key)
+-
+-        self.cache.move_to_end(key, last=True)
+-
+-        return cast(V, value)
+-
+-    def __iter__(self) -> Iterator[K]:
+-        return iter(self.cache)
+-
+-    def get(self, key: K, default: Optional[D] = None) -> Optional[Union[V, D]]:
+-        value = self.cache.get(key, _missing)
+-
+-        if value is not _missing:
+-            self.cache.move_to_end(key, last=True)
+-
+-            return cast(V, value)
+-
+-        return default
+-
+-    def set(self, key: K, value: V):
+-        if key in self.cache:
+-            self.cache[key] = value
+-            self.cache.move_to_end(key, last=True)
+-        else:
+-            self.cache[key] = value
+-
+-            # Check, if the cache is full and we have to remove old items
+-            # If the queue is of unlimited size, self.capacity is NaN and
+-            # x > NaN is always False in Python and the cache won't be cleared.
+-            if self.capacity is not None and self.length > self.capacity:
+-                self.cache.popitem(last=False)
+-
+-
+-class FrozenDict(dict):
+-    """
+-    An immutable dictionary.
+-
+-    This is used to generate stable hashes for queries that contain dicts.
+-    Usually, Python dicts are not hashable because they are mutable. This
+-    class removes the mutability and implements the ``__hash__`` method.
+-    """
+-
+-    def __hash__(self):
+-        # Calculate the has by hashing a tuple of all dict items
+-        return hash(tuple(sorted(self.items())))
+-
+-    def _immutable(self, *args, **kws):
+-        raise TypeError('object is immutable')
+-
+-    # Disable write access to the dict
+-    __setitem__ = _immutable
+-    __delitem__ = _immutable
+-    clear = _immutable
+-    setdefault = _immutable  # type: ignore
+-    popitem = _immutable
+-
+-    def update(self, e=None, **f):
+-        raise TypeError('object is immutable')
+-
+-    def pop(self, k, d=None):
+-        raise TypeError('object is immutable')
+-
+-
+-def freeze(obj):
+-    """
+-    Freeze an object by making it immutable and thus hashable.
+-    """
+-    if isinstance(obj, dict):
+-        # Transform dicts into ``FrozenDict``s
+-        return FrozenDict((k, freeze(v)) for k, v in obj.items())
+-    elif isinstance(obj, list):
+-        # Transform lists into tuples
+-        return tuple(freeze(el) for el in obj)
+-    elif isinstance(obj, tuple):
+-        # Freeze tuple elements too, so a nested dict/list inside an
+-        # already-tuple arg (e.g. Query.test's *args) is still hashable
+-        return tuple(freeze(el) for el in obj)
+-    elif isinstance(obj, set):
+-        # Transform sets into ``frozenset``s
+-        return frozenset(obj)
+-    else:
+-        # Don't handle all other objects
+-        return obj
