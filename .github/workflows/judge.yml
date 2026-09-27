@@ -1,0 +1,22 @@
+name: judge
+
+on:
+  push:
+    branches: [integration, main]
+  workflow_dispatch:
+
+jobs:
+  bare-ubuntu:
+    runs-on: ubuntu-latest
+    container: ubuntu:22.04
+    steps:
+      - run: apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git make curl ca-certificates python3
+      - run: test -z "$(command -v node)"
+      - run: git clone --depth 1 -b "$GITHUB_REF_NAME" "https://x-access-token:${{ github.token }}@github.com/$GITHUB_REPOSITORY.git" repo
+      - run: cd repo && make setup && make test
+
+  ubuntu-latest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make setup && make test
