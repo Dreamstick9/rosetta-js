@@ -58,7 +58,7 @@ function applyDelta(reply, delta, handlers) {
     reply.content += delta.content;
     handlers.onText(delta.content);
   }
-  if (takeReasoningDelta(reply, delta)) handlers.onReasoning();
+  if (takeReasoningDelta(reply, delta)) handlers.onReasoning(readReasoningText(delta[reply.reasoningField]));
   for (const part of delta.tool_calls ?? []) addToolCallPart(reply.toolCalls, part);
 }
 
@@ -69,4 +69,8 @@ function addToolCallPart(toolCalls, part) {
   if (part.id) call.id = part.id;
   if (part.function?.name) call.name += part.function.name;
   if (part.function?.arguments) call.arguments += part.function.arguments;
+}
+
+function readReasoningText(value) {
+  return typeof value === "string" ? value : "";
 }

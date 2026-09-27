@@ -5,8 +5,9 @@ import { countChangedFiles, takeProjectSnapshot } from "./checks.js";
 import { prepareModel } from "./model/prepare.js";
 import { stopShell } from "./tools/shell.js";
 import { readBestOfSize, readHeadlessTask, readUserMessage, startTerminalInput, stopTerminalInput, watchForInterrupt } from "./input.js";
-import { writeDimLine, writeError, writeFooter } from "./ui.js";
+import { setUiSink, writeDimLine, writeError, writeFooter, writeInterrupted } from "./ui.js";
 import { handleCommand, isCommand, parseBestOf } from "./slash.js";
+import { Tui } from "./tui/app.js";
 import { openWorkingFolder } from "./workdir.js";
 import { parseTaskReference } from "./intake/parse.js";
 import { chooseTaskStart, createMainAgent, readSessionSnapshot, resumeTask, startBestOf, startTask } from "./taskstart.js";
@@ -20,17 +21,25 @@ async function main() {
   const config = CONFIG;
   if (!config.apiKey) exitWithError("AI_API_KEY is not set. Export it in your environment first.");
   process.on("exit", cleanUp);
-  writeDimLine(describeModel(config));
-  await prepareModel(config);
   const args = process.argv.slice(2);
   const resuming = args.includes("--resume");
   const task = resuming ? null : await readHeadlessTask(args);
+  const tui = !resuming && task === null && wantsTui(args) ? new Tui() : null;
+  if (!tui) writeDimLine(describeModel(config));
+  await prepareModel(config);
   const problem = openWorkingFolder(task === null || parseTaskReference(task) !== null);
   if (problem) exitWithError(problem);
   const trace = new Trace(config);
   if (resuming) return runHeadlessResume(config, trace);
   if (task !== null) return runHeadless(config, trace, task, readBestOfSize(args));
-  return runInteractive(config, trace, args.includes("--chat") || !config.exitAfterTask);
+  const keepChatting = args.includes("--chat") || !config.exitAfterTask;
+  if (tui) return runTui(tui, config, trace, keepChatting);
+  return runInteractive(config, trace, keepChatting);
+}
+
+function wantsTui(args) {
+  if (args.includes("--plain") || process.env.ROSETTA_UI === "line") return false;
+  return Boolean(process.stdin.isTTY && process.stdout.isTTY);
 }
 
 function describeModel(config) {
@@ -50,6 +59,13 @@ async function runHeadless(config, trace, task, bestOfSize) {
 async function runHeadlessResume(config, trace) {
   const agent = createMainAgent(config, trace);
   await runTask(trace, new AbortController().signal, (signal) => resumeTask(agent, signal));
+  finishSession(trace);
+}
+
+async function runTui(tui, config, trace, keepChatting) {
+  const agent = createMainAgent(config, trace);
+  const runTuiTask = (text, signal) => runTask(trace, signal, chooseTaskStart(agent, trace, text));
+  await tui.run({ agent, trace, keepChatting, runTask: runTuiTask });
   finishSession(trace);
 }
 
@@ -89,7 +105,7 @@ async function runTask(trace, signal, start) {
     if (result.outcome !== "done") writeError(`Outcome: ${result.outcome}`);
     lastStatus = result.outcome;
   } catch (error) {
-    if (signal.aborted) writeDimLine("[interrupted]");
+    if (signal.aborted) writeInterrupted();
     else writeError(`Error: ${error.message}`);
     lastStatus = signal.aborted ? "interrupted" : "error";
   }
@@ -113,6 +129,7 @@ function cleanUp() {
 }
 
 function exitWithError(message) {
+  setUiSink(null);
   writeError(message);
   process.exit(1);
 }

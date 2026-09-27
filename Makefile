@@ -26,6 +26,7 @@ test: setup
 	@AI_API_KEY=unused $(NODE) test/repair.js
 	@AI_API_KEY=unused $(NODE) test/skills-internal.js
 	@AI_API_KEY=unused $(NODE) test/orchestrator.js
+	@AI_API_KEY=unused $(NODE) test/tui.js
 	@$(NODE) $(ENV_FILE_FLAG) test/smoke.js
 
 eval:

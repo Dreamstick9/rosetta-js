@@ -57,6 +57,7 @@ async function runToolCall(call, context) {
     checkArguments(tool.definition.function, call.args);
     const blockedReason = checkToolCall(call.name, call.args, context.shell.currentCwd(), context.root, isReadOnlyRole(context.role));
     if (blockedReason) return { call, output: describeBlock(blockedReason), status: "blocked", ms: 0 };
+    context.onStart?.(call);
     const result = await tool.run(call.args, context);
     const { output, line } = typeof result === "string" ? { output: result } : result;
     return { call, output, line, status: "ok", ms: Date.now() - startedAt };

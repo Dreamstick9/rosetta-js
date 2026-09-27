@@ -4,7 +4,7 @@ import path from "node:path";
 import { CONFIG, PROJECT_ROOT } from "./config.js";
 import { buildChildEnvironment } from "./environment.js";
 import { IGNORED_DIRECTORIES } from "./tools/files.js";
-import { writeDimLine } from "./ui.js";
+import { writeCheckResult, writeCheckStart } from "./ui.js";
 import { digestOutput } from "./digest/index.js";
 
 const CHECK_TIMEOUT_MS = CONFIG.timeouts.testCheckSeconds * 1000;
@@ -103,9 +103,10 @@ function findPythonTestCommand(root) {
 }
 
 export async function runDoneCheck(command, signal, root = PROJECT_ROOT, outputDirectory = null) {
+  writeCheckStart(command);
   const result = await runCheckCommand(command, signal, CHECK_TIMEOUT_MS, root);
   signal.throwIfAborted();
-  writeDimLine(`check: ${command} ${result.passed ? "✓" : "✗"}`);
+  writeCheckResult({ command, passed: result.passed });
   if (result.passed) return { passed: true, tail: result.tail };
   const failureMessage = `I ran \`${command}\` after your changes and it failed. Output:\n${describeFailure(command, result.output, outputDirectory)}\n\nPlease fix the problem.`;
   return { passed: false, tail: result.tail, failureMessage };

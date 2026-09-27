@@ -6,23 +6,32 @@ const TOOL_MARKS = { ok: "→", error: "✗", blocked: "⊘" };
 const DETAIL_LENGTH = 120;
 
 let atLineStart = true;
+let sink = null;
+
+export function setUiSink(nextSink) {
+  sink = nextSink;
+}
 
 export function writeText(text) {
   if (!text) return;
+  if (sink) return sink.text(text);
   process.stdout.write(text);
   atLineStart = text.endsWith("\n");
 }
 
 export function writeLine(text) {
+  if (sink) return sink.notice(text, "plain");
   const prefix = atLineStart ? "" : "\n";
   writeText(`${prefix}${text}\n`);
 }
 
 export function writeDimLine(text) {
+  if (sink) return sink.notice(text, "dim");
   writeLine(paint(DIM, text));
 }
 
 export function writeError(text) {
+  if (sink) return sink.notice(text, "error");
   writeLine(paint(RED, text));
 }
 
@@ -32,6 +41,7 @@ function paint(color, text) {
 }
 
 export function createReplyPrinter() {
+  if (sink) return { onText: (text) => sink.text(text), onReasoning: (text) => sink.reasoning(text) };
   let thinkingShown = false;
   return {
     onText: writeText,
@@ -47,7 +57,13 @@ export function createQuietPrinter() {
   return { onText() {}, onReasoning() {} };
 }
 
-export function writeToolLine({ name, summary, status, output, line, label }) {
+export function writeToolStart(call) {
+  sink?.toolStart(call);
+}
+
+export function writeToolLine(result) {
+  if (sink) return sink.toolEnd(result);
+  const { name, summary, status, output, line, label } = result;
   const prefix = label ? `  [${label}] ` : "  ";
   if (line) return writeDimLine(`${prefix}${line}`);
   const parts = [`${prefix}${TOOL_MARKS[status]} ${name}`];
@@ -60,7 +76,23 @@ function firstLine(text) {
   return text.split("\n")[0].slice(0, DETAIL_LENGTH);
 }
 
-export function writeFooter({ cost, seconds, inputTokens, cachedTokens, outputTokens }) {
+export function writeCheckStart(command) {
+  sink?.checkStart(command);
+}
+
+export function writeCheckResult({ command, passed }) {
+  if (sink) return sink.checkEnd({ command, passed });
+  writeDimLine(`check: ${command} ${passed ? "✓" : "✗"}`);
+}
+
+export function writeInterrupted() {
+  if (sink) return sink.interrupted();
+  writeDimLine("[interrupted]");
+}
+
+export function writeFooter(result) {
+  if (sink) return sink.taskEnd(result);
+  const { cost, seconds, inputTokens, cachedTokens, outputTokens } = result;
   const parts = [
     `$${cost.toFixed(4)}`,
     `${seconds.toFixed(1)}s`,

@@ -75,6 +75,7 @@ primary path).
 | ----- | ------ |
 | `-p "task"` / `ISSUE=...` / piped stdin | headless run of one task |
 | `--chat` | keep the TUI open after a task |
+| `--plain`, `ROSETTA_UI=line` | use the plain line interface instead of the TUI |
 | `--resume`, `/resume` | continue the task saved in `<repo>/.rosetta/session.json` |
 | `--best-of N`, `/best-of N <task>` | tournament: N workers on the task in private copies, the best one is merged |
 | `/help` | list the commands |
@@ -86,7 +87,62 @@ primary path).
 | `/exit`, Ctrl-D | quit |
 | Esc or Ctrl-C during a turn | stop the turn and every running sub-agent |
 
-Lines that start with `/` are never sent to the model.
+## Terminal UI
+
+In a terminal, `make run` opens a full-screen-width TUI modelled on the Codex
+CLI: finished output goes into the normal scrollback, and a live area at the
+bottom holds the running work, a status line
+(`• Working (12s • esc to interrupt)`), the input box and a footer with key
+hints and how much context is left. `--plain` (or piped/headless input) keeps
+the simple line interface.
+
+What it shows:
+
+- your message (`› …`), the agent's reply streamed as Markdown (`• …`)
+- `• Explored` groups for `read_file`, `list_files` and `search`
+- `• Ran <command>` with the first and last lines of output (red when the exit code is not 0)
+- `• Edited <file> (+a -d)` / `• Added` / `• Deleted` with a line-numbered diff
+- `• Blocked …` with the policy reason, `• Ran tests …` for the done-check,
+  retries, compaction notices and a `─ Worked for 6s · $0.0002 · … ─` line per task
+- the model's reasoning headline in the status line; the full reasoning in the transcript (Ctrl-T)
+
+| Command       | Effect |
+| ------------- | ------ |
+| `/model`      | pick a model from `{baseUrl}/models` (cost reporting keeps `pricing.*` from `config.json`) |
+| `/approvals`  | switch the safety policy between `standard` and full access (`off`) |
+| `/new`        | clear the conversation |
+| `/compact`    | compact the conversation now |
+| `/diff`       | show `git diff` against HEAD, including untracked files |
+| `/mention`    | insert `@` to pick a file |
+| `/status`     | model, endpoint, folder, policy, test check, limits, trace, cost, tokens, context |
+| `/cost`       | session cost, token totals and trace file |
+| `/check [on\|off]` | toggle the test check after changes |
+| `/help`       | commands and keys |
+| `/quit`, `/exit` | quit |
+
+Typing `/` opens the command list and `@` opens a fuzzy file search; ↑/↓ choose,
+Tab completes, Enter runs or inserts, Esc closes. Model and policy changes are
+recorded in the trace as `setting` lines.
+
+| Key | Effect |
+| --- | ------ |
+| Enter | send; while a task runs the message is queued (`↳ …`) and sent afterwards |
+| Shift-Enter, Ctrl-J | newline |
+| Esc | interrupt the running task (queued messages return to the input) |
+| Ctrl-C | interrupt, clear the input, or quit when pressed twice |
+| Ctrl-D | quit when the input is empty |
+| ↑ / ↓ | move between lines, then through earlier messages |
+| Ctrl-T | transcript overlay (↑/↓, PgUp/PgDn, Home/End, q) |
+| Ctrl-L | clear the screen |
+| Ctrl-A/E, Ctrl-U/K, Ctrl-W, Alt-←/→ | line and word editing |
+
+Pastes of 1000 characters or more show as `[Pasted Content N chars]` and are
+sent in full. With `exitAfterTask: true` (the judge flow) the TUI exits after
+the first task; `--chat` keeps it open. Lines that start with `/` are never
+sent to the model.
+
+The plain interface (`--plain`) keeps the original commands: `/help`, `/new`,
+`/cost`, `/check on|off`, `/exit`.
 
 ## Safety policy (never prompts)
 
@@ -352,13 +408,17 @@ parameters and policy used.
 | `test/orchestrator.js` | dependency graph, waves, fan-out rule, conflicts |
 | `test/repair.js` | malformed tool calls fed through the repair chain |
 | `test/skills-internal.js` | skill router and output digests |
+| `test/tui.js` | TUI text layout, diff, keys and composer |
 | `evals/` | `make eval` benchmark: runner, tasks, hidden tests, gold patches |
 | `src/cli.js` | entry point: modes, final summary, exit codes |
 | `src/input.js` | reads the task (argument, `ISSUE`, pipe) and terminal input |
 | `src/lineeditor.js` | TUI line editor with paste handling and history |
 | `src/slash.js` | slash commands |
 | `src/taskstart.js` | starts a task, a resume or a best-of-N run |
-| `src/ui.js` | terminal output |
+| `src/ui.js` | terminal output; routes events to the TUI when it runs |
+| `src/tui/app.js` | the TUI: live area, rendering, keys, slash commands, transcript |
+| `src/tui/cells.js` | history cells (messages, commands, diffs, status box) |
+| `src/tui/*.js` | text layout, Markdown, diff, key parser, composer, pickers, file search, git diff |
 | `src/config.js` | loads and checks `config.json`, holds the working folder |
 | `src/workdir.js` | picks the working folder without asking |
 | `src/environment.js` | the shell's environment without secrets, with no-prompt settings |

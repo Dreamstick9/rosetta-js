@@ -10,7 +10,7 @@ import { TaskLoop } from "./attempts.js";
 import { describeUnresumable, loadSession } from "./session.js";
 import { addSkillNotes } from "./skills-internal/index.js";
 import { digestOutput } from "./digest/index.js";
-import { createQuietPrinter, createReplyPrinter, writeDimLine, writeError, writeToolLine } from "./ui.js";
+import { createQuietPrinter, createReplyPrinter, writeDimLine, writeError, writeToolLine, writeToolStart } from "./ui.js";
 
 const TOOL_TOKENS = estimateTokens(TOOL_DEFINITIONS);
 const FILE_TOOLS = new Set(["read_file", "create_file", "write_file", "edit_file", "delete_file"]);
@@ -112,7 +112,7 @@ export class Agent {
 
   async runTools(calls, signal) {
     const { root, shell, role } = this.scope;
-    const results = await runToolCalls(calls, { signal, loop: this.loop, orchestrator: this.orchestrator, root, shell, role, trace: this.trace, taskText: this.originalTask });
+    const results = await runToolCalls(calls, { signal, onStart: writeToolStart, loop: this.loop, orchestrator: this.orchestrator, root, shell, role, trace: this.trace, taskText: this.originalTask });
     const recorded = results.map((result) => ({ ...result, content: this.recordToolResult(result) }));
     this.messages.push(...this.adapter.resultMessages(recorded));
     signal.throwIfAborted();
@@ -122,7 +122,7 @@ export class Agent {
   recordToolResult({ call, output, line, status, ms }) {
     const content = truncateOutput(call.name === "bash" ? digestOutput(call.args.command, output, this.outputDirectory()) : output);
     const summary = summarizeToolArguments(call.args);
-    writeToolLine({ name: call.name, summary, status, output, line, label: this.scope.quiet ? this.scope.id : null });
+    writeToolLine({ id: call.id, name: call.name, args: call.args, summary, status, output, line, label: this.scope.quiet ? this.scope.id : null });
     const reason = status === "blocked" ? output : undefined;
     this.trace.recordToolCall({ name: call.name, args: summary, ms, bytes: Buffer.byteLength(content), status, reason });
     if (status === "ok" && FILE_TOOLS.has(call.name)) this.touchedFiles.add(call.args.path);
