@@ -23,6 +23,7 @@ test: setup
 	@AI_API_KEY=unused $(NODE) test/intake.js
 	@AI_API_KEY=unused $(NODE) test/workspace.js
 	@AI_API_KEY=unused $(NODE) test/loop.js
+	@AI_API_KEY=unused $(NODE) test/repair.js
 	@$(NODE) $(ENV_FILE_FLAG) test/smoke.js
 
 clean:

@@ -1,5 +1,6 @@
 import { requestCompletion } from "./model.js";
-import { buildAssistantMessage } from "./stream.js";
+import { ModelAdapter } from "./model/adapter.js";
+import { dropReasoning } from "./model/reasoning.js";
 import { TOOL_DEFINITIONS, runToolCalls, summarizeToolArguments } from "./tools/index.js";
 import { compactMessages, estimateTokens, isPrefixStable, needsCompaction, truncateOutput } from "./context.js";
 import { readTokenCounts } from "./trace.js";
@@ -18,6 +19,7 @@ export class Agent {
     this.doneCheckEnabled = true;
     this.systemMessage = null;
     this.loop = new TaskLoop(this);
+    this.adapter = new ModelAdapter(config, TOOL_DEFINITIONS);
     this.reset();
   }
 
@@ -59,8 +61,8 @@ export class Agent {
   loadSystemMessage() {
     if (this.systemMessage) return;
     const prompt = buildSessionPrompt();
-    this.systemMessage = prompt.message;
-    this.messages.unshift(prompt.message);
+    this.systemMessage = this.adapter.systemMessage(prompt.message.content);
+    this.messages.unshift(this.systemMessage);
     this.trace.recordPromptLoad(prompt.loaded);
     writeDimLine(describeLoadedContext(prompt.loaded));
   }
@@ -72,16 +74,17 @@ export class Agent {
     }
     const promptEstimate = this.estimateContextTokens();
     const startedAt = Date.now();
-    const reply = await requestCompletion({
+    const raw = await requestCompletion({
       config: this.config,
       messages: this.messages,
-      tools: TOOL_DEFINITIONS,
+      ...this.adapter.requestOptions(),
       handlers: createReplyPrinter(),
       signal,
       onRetry: (message) => writeDimLine(`[retry] ${message}`),
     });
-    this.messages.push(buildAssistantMessage(reply));
-    this.recordUsage(reply, promptEstimate, Date.now() - startedAt, stats);
+    const reply = this.adapter.readReply(raw);
+    this.messages.push(reply.message);
+    this.recordUsage(raw, promptEstimate, Date.now() - startedAt, stats);
     return reply;
   }
 
@@ -96,7 +99,8 @@ export class Agent {
 
   async runTools(calls, signal) {
     const results = await runToolCalls(calls, { signal, loop: this.loop });
-    for (const result of results) this.recordToolResult(result);
+    const recorded = results.map((result) => ({ ...result, content: this.recordToolResult(result) }));
+    this.messages.push(...this.adapter.resultMessages(recorded));
     signal.throwIfAborted();
     return results;
   }
@@ -107,8 +111,8 @@ export class Agent {
     writeToolLine({ name: call.name, summary, status, output });
     const reason = status === "blocked" ? output : undefined;
     this.trace.recordToolCall({ name: call.name, args: summary, ms, bytes: Buffer.byteLength(content), status, reason });
-    this.messages.push({ role: "tool", tool_call_id: call.id, content });
     if (status === "ok" && FILE_TOOLS.has(call.name)) this.touchedFiles.add(call.args.path);
+    return content;
   }
 
   compactIfNeeded() {
@@ -118,7 +122,7 @@ export class Agent {
 
   compact(forceSummary) {
     const before = this.estimateContextTokens();
-    this.messages = compactMessages(this.messages, {
+    this.messages = dropReasoning(compactMessages(this.messages, {
       originalTask: this.originalTask,
       currentRequest: this.currentRequest,
       touchedFiles: this.touchedFiles,
@@ -126,7 +130,7 @@ export class Agent {
       forceSummary,
       maxContextTokens: this.config.maxContextTokens,
       toolTokens: TOOL_TOKENS,
-    });
+    }));
     this.usageMark = null;
     const after = this.estimateContextTokens();
     writeDimLine(`[context compacted${forceSummary ? " at a plan milestone" : ""}: ${before} → ${after} tokens]`);

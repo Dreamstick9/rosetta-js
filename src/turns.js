@@ -5,7 +5,7 @@ import { writeDimLine, writeError } from "./ui.js";
 const MAX_NUDGES = CONFIG.agent.maxEmptyReplyNudges;
 const MAX_CHECK_ROUNDS = CONFIG.agent.maxCheckRounds;
 const MILESTONE_COMPACT_SHARE = CONFIG.loop.milestoneCompactShare;
-const NUDGE_MESSAGE = "Please continue.";
+const NUDGE_MESSAGE = "Your reply was empty. Continue the task: call a tool, or give your final answer.";
 const STALL_NOTE = "You have made no progress for several turns: no plan item was ticked and the tests are not closer to passing. Stop and state a new hypothesis about the cause, then try a different approach.";
 
 export async function runAttemptTurns(agent, loop, signal, stats) {
@@ -39,8 +39,12 @@ function stopForBudget(config) {
 }
 
 async function playTurn(agent, loop, reply, signal) {
-  if (reply.toolCalls.length === 0) return finishReply(agent, loop, reply, signal);
-  const results = await agent.runTools(reply.toolCalls, signal);
+  if (reply.followUp) {
+    agent.addUserMessage(reply.followUp);
+    return null;
+  }
+  if (reply.calls.length === 0) return finishReply(agent, loop, reply, signal);
+  const results = await agent.runTools(reply.calls, signal);
   for (const result of results) loop.attempt.noteToolResult(result);
   if (loop.giveUpReason) return "gave_up";
   await afterToolTurn(agent, loop, signal);
@@ -86,20 +90,21 @@ function compactAtMilestone(agent, loop, ticks) {
 
 async function finishReply(agent, loop, reply, signal) {
   const attempt = loop.attempt;
-  const followUp = reply.content.trim() ? await checkWork(agent, loop, signal) : nudge(attempt);
+  const followUp = reply.content.trim() ? await checkWork(agent, loop, signal) : nudge(agent, attempt, reply);
   if (!followUp) return attempt.outcome;
   agent.addUserMessage(followUp);
   return null;
 }
 
-function nudge(attempt) {
+function nudge(agent, attempt, reply) {
   if (attempt.nudges >= MAX_NUDGES) {
     writeError("The model returned an empty reply.");
     attempt.outcome = "empty_reply";
     return null;
   }
   attempt.nudges++;
-  writeDimLine("[empty reply; asking the model to continue]");
+  writeDimLine(`repaired: ${reply.reasoning ? "reasoning-only" : "empty"} reply → nudge`);
+  agent.adapter.escalate("empty reply");
   return NUDGE_MESSAGE;
 }
 
@@ -121,5 +126,6 @@ async function checkWork(agent, loop, signal) {
     return null;
   }
   attempt.checkRounds++;
+  agent.adapter.escalate("tests failed");
   return check.failureMessage;
 }

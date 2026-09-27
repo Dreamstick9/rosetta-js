@@ -6,6 +6,12 @@
   "temperature": 0.2,
   "topP": 1,
   "seed": 7,
+  "adapter": {
+    "dialect": "auto",
+    "reasoningEffort": "low",
+    "escalatedReasoningEffort": "high",
+    "probe": true
+  },
   "maxTurns": 60,
   "maxSessionUsd": 1,
   "policy": "standard",
