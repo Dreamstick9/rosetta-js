@@ -23,7 +23,7 @@ async function main() {
   console.log(`Eval ${stamp}: ${tasks.length} tasks × ${options.runs} runs × ${arms.length} arms, parallel ${options.parallel}`);
   await ensureClones(tasks);
   const jobs = buildJobs(tasks, arms, options.runs);
-  const records = await runPool(jobs, options.parallel, (job) => runJob(job, context).then(printProgress));
+  const records = await runPool(jobs, options.parallel, (job) => runJob(job, context).then((record) => saveRecord(context, record)));
   await writeResults({ stamp, options, arms, context, records });
 }
 
@@ -53,6 +53,11 @@ function buildJobs(tasks, arms, runs) {
     for (let run = 1; run <= runs; run++) for (const arm of arms) jobs.push({ task, arm, run });
   }
   return jobs;
+}
+
+function saveRecord(context, record) {
+  fs.appendFileSync(path.join(context.logRoot, "records.jsonl"), `${JSON.stringify(record)}\n`);
+  return printProgress(record);
 }
 
 function printProgress(record) {
