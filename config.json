@@ -1,6 +1,20 @@
 {
-  "baseUrl": "https://ai.hackclub.com/proxy/v1",
-  "model": "deepseek/deepseek-v4.1-flash",
+  "provider": "hackclub",
+  "providers": {
+    "hackclub": {
+      "baseUrl": "https://ai.hackclub.com/proxy/v1",
+      "model": "deepseek/deepseek-v4.1-flash"
+    },
+    "openrouter": {
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "model": "deepseek/deepseek-v4.1-flash"
+    },
+    "aws": {
+      "baseUrl": "https://bedrock-runtime.{region}.amazonaws.com/openai/v1",
+      "model": "openai.gpt-oss-120b-1:0",
+      "region": "us-east-1"
+    }
+  },
   "maxContextTokens": 64000,
   "maxOutputTokens": 8192,
   "temperature": 0.2,

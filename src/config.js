@@ -40,8 +40,7 @@ function loadConfig() {
   const fileConfig = JSON.parse(readFileSync(CONFIG_URL, "utf8"));
   const config = {
     ...fileConfig,
-    baseUrl: process.env.AI_BASE_URL || fileConfig.baseUrl,
-    model: process.env.AI_MODEL || fileConfig.model,
+    ...resolveProvider(fileConfig),
     apiKey: process.env.AI_API_KEY || "",
     overrides: listOverrides(),
   };
@@ -49,8 +48,19 @@ function loadConfig() {
   return config;
 }
 
+function resolveProvider(fileConfig) {
+  const name = process.env.AI_PROVIDER || fileConfig.provider;
+  const provider = fileConfig.providers?.[name];
+  if (!provider) failField("provider", `one of ${Object.keys(fileConfig.providers ?? {}).join(", ")} (from AI_PROVIDER or config.json)`);
+  const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || provider.region || "";
+  const baseUrl = process.env.AI_BASE_URL || provider.baseUrl.replace("{region}", region);
+  const model = process.env.AI_MODEL || provider.model;
+  return { provider: name, baseUrl, model };
+}
+
 function listOverrides() {
   const overrides = [];
+  if (process.env.AI_PROVIDER) overrides.push("AI_PROVIDER");
   if (process.env.AI_BASE_URL) overrides.push("AI_BASE_URL");
   if (process.env.AI_MODEL) overrides.push("AI_MODEL");
   return overrides;

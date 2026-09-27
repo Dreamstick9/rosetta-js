@@ -261,8 +261,10 @@ fallback model. Defaults:
 
 | Field | Default | Meaning |
 | ----- | ------- | ------- |
-| `baseUrl` | `https://ai.hackclub.com/proxy/v1` | API base URL (`{baseUrl}/chat/completions`) |
-| `model` | `deepseek/deepseek-v4.1-flash` | model name |
+| `provider` | `hackclub` | which entry of `providers` to use (env `AI_PROVIDER` overrides) |
+| `providers.hackclub` | `https://ai.hackclub.com/proxy/v1`, `deepseek/deepseek-v4.1-flash` | Hack Club proxy (our testing) |
+| `providers.openrouter` | `https://openrouter.ai/api/v1`, `deepseek/deepseek-v4.1-flash` | OpenRouter |
+| `providers.aws` | `https://bedrock-runtime.{region}.amazonaws.com/openai/v1`, `openai.gpt-oss-120b-1:0`, region `us-east-1` | AWS Bedrock OpenAI-compatible endpoint; `{region}` comes from `AWS_REGION`, then `AWS_DEFAULT_REGION`, then `region`. `AI_API_KEY` is a Bedrock API key |
 | `maxContextTokens` | 64000 | context window the agent plans for |
 | `maxOutputTokens` | 8192 | `max_tokens` per reply |
 | `temperature` | 0.2 | sampling temperature |
@@ -319,8 +321,8 @@ fallback model. Defaults:
 | `web.excludedDomains` / `jsonDigest` | [] / true | domains never fetched; outline instead of raw JSON |
 
 Environment: `AI_API_KEY` (required, only sent in the `Authorization`
-header), `AI_BASE_URL` / `AI_MODEL` (overrides, printed at start and recorded
-in the trace), `REPO` / `TARGET_REPO` / `REPO_PATH` / `WORK_DIR`, `ISSUE`,
+header), `AI_PROVIDER` (`hackclub`, `openrouter` or `aws`), `AI_BASE_URL` / `AI_MODEL` (overrides, printed at start and recorded
+in the trace), `AWS_REGION` (for `aws`), `REPO` / `TARGET_REPO` / `REPO_PATH` / `WORK_DIR`, `ISSUE`,
 `GITHUB_TOKEN` / `GH_TOKEN` (private repos, intake only), `AI_DIALECT`
 (overrides `adapter.dialect`), `BRAVE_API_KEY` / `TAVILY_API_KEY` (optional
 `web_search` providers; without them DuckDuckGo HTML, DuckDuckGo Lite, then Bing).
