@@ -1,5 +1,5 @@
 {
-  "provider": "hackclub",
+  "provider": "openrouter",
   "providers": {
     "hackclub": {
       "baseUrl": "https://ai.hackclub.com/proxy/v1",

@@ -357,7 +357,7 @@ fallback model. Defaults:
 
 | Field | Default | Meaning |
 | ----- | ------- | ------- |
-| `provider` | `hackclub` | which entry of `providers` to use (env `AI_PROVIDER` overrides) |
+| `provider` | `openrouter` | which entry of `providers` to use (env `AI_PROVIDER` overrides) |
 | `providers.hackclub` | `https://ai.hackclub.com/proxy/v1`, `deepseek/deepseek-v4.1-flash` | Hack Club proxy (our testing) |
 | `providers.openrouter` | `https://openrouter.ai/api/v1`, `deepseek/deepseek-v4.1-flash` | OpenRouter |
 | `providers.aws` | `https://bedrock-runtime.{region}.amazonaws.com/openai/v1`, `openai.gpt-oss-120b-1:0`, region `us-east-1` | AWS Bedrock OpenAI-compatible endpoint; `{region}` comes from `AWS_REGION`, then `AWS_DEFAULT_REGION`, then `region`. `AI_API_KEY` is a Bedrock API key |
