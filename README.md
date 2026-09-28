@@ -16,12 +16,12 @@ Give Rosetta a GitHub issue, an issue URL or a failing test. It reads the repo, 
 
 | | |
 |---|---|
-| 🧪 **The harness verifies, not the model** | Rosetta runs the repo's tests itself before accepting "done", and shrinks noisy test output (231 lines → 27) before the model sees it. |
-| 💸 **Built for cost per task** | The prompt prefix never changes, so 80–98% of input tokens are served from the provider's cache. Every feature stays on only if it measured cheaper. |
-| 🔁 **Improves itself on a task** | A failed attempt gets a lesson written by code from the real failure. The repo is rolled back and a fresh attempt starts with those lessons, then a best-of-2 tournament if needed. |
-| 🧩 **Lean multi-agent** | Independent work runs in parallel workers with only their own sub-task and files. Dependent work waits. Results merge back file by file with conflict checks. |
-| 🛡️ **Safe without prompts** | A silent policy blocks dangerous commands (deleting outside the repo, `git push`, reading credentials) and tells the model why. |
-| 🔌 **Any open model** | A startup probe detects the model's tool format and reasoning fields, and a repair chain fixes broken tool calls. |
+| **The harness verifies, not the model** | Rosetta runs the repo's tests itself before accepting "done", and shrinks noisy test output (231 lines → 27) before the model sees it. |
+| **Built for cost per task** | The prompt prefix never changes, so 80–98% of input tokens are served from the provider's cache. Every feature stays on only if it measured cheaper. |
+| **Improves itself on a task** | A failed attempt gets a lesson written by code from the real failure. The repo is rolled back and a fresh attempt starts with those lessons, then a best-of-2 tournament if needed. |
+| **Lean multi-agent** | Independent work runs in parallel workers with only their own sub-task and files. Dependent work waits. Results merge back file by file with conflict checks. |
+| **Safe without prompts** | A silent policy blocks dangerous commands (deleting outside the repo, `git push`, reading credentials) and tells the model why. |
+| **Any open model** | A startup probe detects the model's tool format and reasoning fields, and a repair chain fixes broken tool calls. |
 
 ## Results
 
